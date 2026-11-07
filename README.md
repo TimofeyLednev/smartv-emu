@@ -16,6 +16,8 @@ This image is a capture of the running guest. The WebBrowser tile can be
 selected with the emulated remote. Launching it executes the original browser
 startup routines, but its visible window currently stays black.
 
+> AI was used in the development
+
 ## What is included
 
 | Folder or file | Contents |
