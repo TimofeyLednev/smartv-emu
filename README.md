@@ -6,6 +6,8 @@ reverse engineering project for the **UE40F6650 / T-MST12DEUC** family.
 SamsungF has its own repository, patch series, tools and research notes;
 QEMU is its underlying execution engine.
 
+> AI was used in the development
+
 The prototype boots Samsung's Linux kernel, runs its original applications,
 and has reached the **interactive Smart Hub Apps dashboard at 1920×1080**.
 Rendering and peripheral emulation are still incomplete.
@@ -15,8 +17,6 @@ Rendering and peripheral emulation are still incomplete.
 This image is a capture of the running guest. The WebBrowser tile can be
 selected with the emulated remote. Launching it executes the original browser
 startup routines, but its visible window currently stays black.
-
-> AI was used in the development
 
 ## What is included
 
