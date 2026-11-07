@@ -1,0 +1,344 @@
+{
+  "base_version": "10.1.0",
+  "base_tag": "v10.1.0",
+  "base_commit": "f8b2f64e2336a28bf0d50b6ef8a7d8c013e9bcf3",
+  "upstream": "https://gitlab.com/qemu-project/qemu.git",
+  "format": "git unified text diff",
+  "line_endings": "LF",
+  "files_changed": 61,
+  "patches": [
+    {
+      "file": "0001-arm-timer-input-clocks.patch",
+      "bytes": 10599,
+      "sha256": "3cd487d14e30a71e1bd5f5a89538242b721bbaa8d838e029d755ca1a803696d4",
+      "files": [
+        "hw/timer/a9gtimer.c",
+        "hw/timer/arm_mptimer.c",
+        "include/hw/timer/a9gtimer.h",
+        "include/hw/timer/arm_mptimer.h"
+      ]
+    },
+    {
+      "file": "0002-mst12-device-models.patch",
+      "bytes": 437659,
+      "sha256": "f528bdc451580936ff40e2c2d07179ce264bd1718c2bf6dcbf15bd1f8e933bae",
+      "files": [
+        "hw/display/mst12_ge.c",
+        "hw/display/mst12_gop.c",
+        "hw/display/mst12_mali.c",
+        "hw/display/mst12_mali_render.c",
+        "hw/display/mst12_mali_shader.c",
+        "hw/display/mst12_mload.c",
+        "hw/display/mst12_mvd.c",
+        "hw/display/mst12_pq_sram.c",
+        "hw/i2c/mst12_gpio_i2c.c",
+        "hw/i2c/mst12_hwiic.c",
+        "hw/i2c/mst12_si2176.c",
+        "hw/misc/mst12_efuse.c",
+        "hw/misc/mst12_micom.c",
+        "hw/misc/mst12_miu_pll.c",
+        "hw/misc/mst12_pcmcia.c",
+        "hw/misc/mst12_tsp.c",
+        "hw/net/mst12_emac.c",
+        "hw/nvram/mst12_factory_eeprom.c",
+        "hw/sd/mst12_fcie.c",
+        "hw/usb/mst12_ehci.c",
+        "include/hw/display/mst12_ge.h",
+        "include/hw/display/mst12_gop.h",
+        "include/hw/display/mst12_mali.h",
+        "include/hw/display/mst12_mali_render.h",
+        "include/hw/display/mst12_mali_shader.h",
+        "include/hw/display/mst12_mload.h",
+        "include/hw/display/mst12_mvd.h",
+        "include/hw/display/mst12_pq_sram.h",
+        "include/hw/i2c/mst12_gpio_i2c.h",
+        "include/hw/i2c/mst12_hwiic.h",
+        "include/hw/i2c/mst12_si2176.h",
+        "include/hw/misc/mst12_efuse.h",
+        "include/hw/misc/mst12_micom.h",
+        "include/hw/misc/mst12_miu_pll.h",
+        "include/hw/misc/mst12_pcmcia.h",
+        "include/hw/misc/mst12_tsp.h",
+        "include/hw/net/mst12_emac.h",
+        "include/hw/nvram/mst12_factory_eeprom.h",
+        "include/hw/sd/mst12_fcie.h",
+        "include/hw/usb/mst12_ehci.h",
+        "hw/display/Kconfig",
+        "hw/display/meson.build",
+        "hw/i2c/Kconfig",
+        "hw/i2c/meson.build",
+        "hw/misc/Kconfig",
+        "hw/misc/meson.build",
+        "hw/net/Kconfig",
+        "hw/net/meson.build",
+        "hw/nvram/Kconfig",
+        "hw/nvram/meson.build",
+        "hw/sd/Kconfig",
+        "hw/sd/meson.build",
+        "hw/usb/Kconfig",
+        "hw/usb/meson.build"
+      ]
+    },
+    {
+      "file": "0003-samsung-ue40f6650-machine.patch",
+      "bytes": 49300,
+      "sha256": "01ad3e49095b9eb215cc797e13083e15e51de3892aaa4ff5bfc0e9f7b5f392b2",
+      "files": [
+        "hw/arm/samsung_mstar_ue40f6650.c",
+        "hw/arm/Kconfig",
+        "hw/arm/meson.build"
+      ]
+    }
+  ],
+  "source_files": {
+    "hw/arm/Kconfig": {
+      "bytes": 13683,
+      "sha256": "21f87b8a680a514c21983edc6df7e26e01a0ad04f5a55fd2800786666c34798f"
+    },
+    "hw/arm/meson.build": {
+      "bytes": 5540,
+      "sha256": "d9a200d785a10890399b6e825d7739c4853d0f73fa7e617d29fa839671a2b805"
+    },
+    "hw/arm/samsung_mstar_ue40f6650.c": {
+      "bytes": 46592,
+      "sha256": "7be85dd53e7840508ba51eca23ea9702563cefab8b5ba86202d4dd370c24fe00"
+    },
+    "hw/display/Kconfig": {
+      "bytes": 2127,
+      "sha256": "d268308385ddab141f7a53ed0f2369208407750497a9d25609d473a6e23af7fa"
+    },
+    "hw/display/meson.build": {
+      "bytes": 7589,
+      "sha256": "15b7b7e49c362d7114efc588f8c37160242db7cc88c11cd60b009239e628ba1b"
+    },
+    "hw/display/mst12_ge.c": {
+      "bytes": 28095,
+      "sha256": "e21de7961428d83232c3dd09fd4ac15108158a9c9c7c0cc514a68a935088df49"
+    },
+    "hw/display/mst12_gop.c": {
+      "bytes": 18756,
+      "sha256": "7b0b538fba9c97985e68a09df36082f563fd4c98edfe260407fbc25d18068540"
+    },
+    "hw/display/mst12_mali.c": {
+      "bytes": 47886,
+      "sha256": "da1dd1fc265699435b76b48b2ee03f64a0a4f6775ed1fbefb7fab9783eaf247d"
+    },
+    "hw/display/mst12_mali_render.c": {
+      "bytes": 45667,
+      "sha256": "1779dea25add2b1aeff3404cc862b0b4ae100998fa07880810f66185c737f19a"
+    },
+    "hw/display/mst12_mali_shader.c": {
+      "bytes": 44663,
+      "sha256": "6fcc5bff960c753ef84589a383bc1e40707180ed04c53aa9633ea6d9fd34a7d2"
+    },
+    "hw/display/mst12_mload.c": {
+      "bytes": 13285,
+      "sha256": "c1547ec84b83d101ee943a8511237657e93bf18d6acc19050db187fd2317ac83"
+    },
+    "hw/display/mst12_mvd.c": {
+      "bytes": 8768,
+      "sha256": "dc4a088d74873049178d9cbb68fea5c4d9854e9f8a2eed1e3f5aed8535d89e4b"
+    },
+    "hw/display/mst12_pq_sram.c": {
+      "bytes": 13774,
+      "sha256": "0e72964666ea4dae6e52b2025dc1b69a19adbbfa9975a6622c176ebc254036a5"
+    },
+    "hw/i2c/Kconfig": {
+      "bytes": 772,
+      "sha256": "7e9cafff23d2a672fe8d62b919d42d2bbd8204cf5254d3bc630f3e8c6f78c8ff"
+    },
+    "hw/i2c/meson.build": {
+      "bytes": 1629,
+      "sha256": "3e32a169ffa8f34e96ad88dee4a803589414ad84b1fbea47866a814f529067cf"
+    },
+    "hw/i2c/mst12_gpio_i2c.c": {
+      "bytes": 8290,
+      "sha256": "c5e97558cc89d92928110755d4d4440d692f2077b035a942f8c439b3336d8bc2"
+    },
+    "hw/i2c/mst12_hwiic.c": {
+      "bytes": 22215,
+      "sha256": "7ae441366cbde1c0f59765f066a07737a174f200f2ec30a33db1ecc97ddab1c2"
+    },
+    "hw/i2c/mst12_si2176.c": {
+      "bytes": 19698,
+      "sha256": "24612f6c3653c9c26cbc83e638b16c894743bae3b9bcac69cac0f6922549627e"
+    },
+    "hw/misc/Kconfig": {
+      "bytes": 2844,
+      "sha256": "794bf9a19f7e87235536e87faa597a9c11527d610364b247a5246b9ef8464447"
+    },
+    "hw/misc/meson.build": {
+      "bytes": 8159,
+      "sha256": "fb8a613178b0c93bd8735c4830608036145cd8795cc656427122cc47bbca68b1"
+    },
+    "hw/misc/mst12_efuse.c": {
+      "bytes": 6879,
+      "sha256": "a5a2a9fcb8a8ed093775557ba67358bdb2dfa7fb5080c154cecdce28cc485c42"
+    },
+    "hw/misc/mst12_micom.c": {
+      "bytes": 20225,
+      "sha256": "1fc63f673c8f72c5a125497d164c9d808dc65430f5854b99df9b6c65c9e80211"
+    },
+    "hw/misc/mst12_miu_pll.c": {
+      "bytes": 9022,
+      "sha256": "c6ebd5da7f265df1ad0ffd798ba964fa1b1a8f2f143fe93c3da22f1d371f72f6"
+    },
+    "hw/misc/mst12_pcmcia.c": {
+      "bytes": 11880,
+      "sha256": "c254e509a84871f5f04700511c6219571f7fe3b5ca66e6dc898375a3aff04c9b"
+    },
+    "hw/misc/mst12_tsp.c": {
+      "bytes": 23359,
+      "sha256": "3e9cbcfc11d9653c9b5d09acabb91e028e8c2c5935a8dc89f311ff485c101f04"
+    },
+    "hw/net/Kconfig": {
+      "bytes": 2337,
+      "sha256": "dcf2d0f472c600b7597cbb522e36d640862b302869c249f48c508df2254c1ac2"
+    },
+    "hw/net/meson.build": {
+      "bytes": 4041,
+      "sha256": "b36c6262e2c0f36e5d854f2e31e8cea62fc19dc80c8608b0a063919e6ff1d183"
+    },
+    "hw/net/mst12_emac.c": {
+      "bytes": 24123,
+      "sha256": "4cf11cd188b7cc3fd417d777e10ad91ceb66d5a683f4ebb32d6bbf2c4fd3df9f"
+    },
+    "hw/nvram/Kconfig": {
+      "bytes": 559,
+      "sha256": "7c11bda180697d5f582592b608a71bd3a4121fd1661e99bdccf8aa719ad872c2"
+    },
+    "hw/nvram/meson.build": {
+      "bytes": 1472,
+      "sha256": "41a7150c48ce9b5b7d7931fb67afef004728d408dc88ffb0dee9eb58ad2715a9"
+    },
+    "hw/nvram/mst12_factory_eeprom.c": {
+      "bytes": 11860,
+      "sha256": "6fae53eded19e7bf1eef20b49c12f4fd848691ed3d1d2a45dec14f4f422c6f6a"
+    },
+    "hw/sd/Kconfig": {
+      "bytes": 332,
+      "sha256": "447cb7ff755d8dd5c449c0b44380b8a907f141f25799452bf0ef5d2c534209d7"
+    },
+    "hw/sd/meson.build": {
+      "bytes": 848,
+      "sha256": "dd1ee8be3e0fa202e8afc7522aefb8f3a9a51728edcbf71453a9f1152e7f3359"
+    },
+    "hw/sd/mst12_fcie.c": {
+      "bytes": 9949,
+      "sha256": "74faae2d71f13f02f8bc2f98f7bf60979b583e9fbad38eb821303b996250a816"
+    },
+    "hw/timer/a9gtimer.c": {
+      "bytes": 13679,
+      "sha256": "279c25a0e139bf6875d6078500852d5147afcc93d69cccbe0d1a24f1d963ac6c"
+    },
+    "hw/timer/arm_mptimer.c": {
+      "bytes": 12098,
+      "sha256": "08600c4e13db1c32e1f4c41de8d40dfe4a289a92cec906423ec5e0c68d67211b"
+    },
+    "hw/usb/Kconfig": {
+      "bytes": 2057,
+      "sha256": "ed4e87069c8b094dbeaa88af130a68acd8a2cc1ef688f7a62dc1096006636d9b"
+    },
+    "hw/usb/meson.build": {
+      "bytes": 3924,
+      "sha256": "bffb1cc4ffc142d901b12b33d5ddb282dd6d19f9d47f3054ec9cc4d90f7767ce"
+    },
+    "hw/usb/mst12_ehci.c": {
+      "bytes": 11171,
+      "sha256": "7e22550e8a049e4cf92650ea09011717b39a361ecb0410e1b12cbf68230e409d"
+    },
+    "include/hw/display/mst12_ge.h": {
+      "bytes": 225,
+      "sha256": "e3c48165669ff319ad5084cc1285ae2b1fdc81e7b9b27a8fe0e7022adbb1f688"
+    },
+    "include/hw/display/mst12_gop.h": {
+      "bytes": 231,
+      "sha256": "4c18bc4720c0fde3eb604e4a60713d63aed8dc9a220c45b79fe8886d2bff9228"
+    },
+    "include/hw/display/mst12_mali.h": {
+      "bytes": 303,
+      "sha256": "6562a5891a250f2532d68dbb62e27d548d51991341d993d7b09c0467cff51b37"
+    },
+    "include/hw/display/mst12_mali_render.h": {
+      "bytes": 1796,
+      "sha256": "1d2ac41bba9771d776e3f35a7a784762862c46984864c9077053af7f0ccdf194"
+    },
+    "include/hw/display/mst12_mali_shader.h": {
+      "bytes": 2725,
+      "sha256": "1bfaa67b95f21eb11d5a9801f1e3fb493733c74504abc1a270689fdea1dba6fa"
+    },
+    "include/hw/display/mst12_mload.h": {
+      "bytes": 243,
+      "sha256": "cbc86e2ebd6d60d134a8f17cf7d2b90c8158fda7f5cd007bc4b653e7fc183407"
+    },
+    "include/hw/display/mst12_mvd.h": {
+      "bytes": 231,
+      "sha256": "0b1993918791f59b5fcd5c13ddc3319c7ea7b25cbb31128568c29cb5a86c03ee"
+    },
+    "include/hw/display/mst12_pq_sram.h": {
+      "bytes": 254,
+      "sha256": "ec958922ce1b1098f92265efb8114c009bca09411a0bbbe638f6393d57520f78"
+    },
+    "include/hw/i2c/mst12_gpio_i2c.h": {
+      "bytes": 252,
+      "sha256": "84cee2378a3e41ad2d26828e3adfce32a4e2fc0810f174443d32a8488aae1115"
+    },
+    "include/hw/i2c/mst12_hwiic.h": {
+      "bytes": 259,
+      "sha256": "2c4417bf4fe2878f52f46763835f67a7a2d094628fae8662a29ae649c95267be"
+    },
+    "include/hw/i2c/mst12_si2176.h": {
+      "bytes": 242,
+      "sha256": "d1a24075bde805d48756932232595beb915b09081999a57234b4de4e522c91fb"
+    },
+    "include/hw/misc/mst12_efuse.h": {
+      "bytes": 237,
+      "sha256": "4d9b0d60926a367386d77f386d7b6c65e9ef97484ba2884353552b95a0109073"
+    },
+    "include/hw/misc/mst12_micom.h": {
+      "bytes": 312,
+      "sha256": "3245993a0d052e475fb955889ef00c020c4fe6403f253775b2d146397ff8c611"
+    },
+    "include/hw/misc/mst12_miu_pll.h": {
+      "bytes": 248,
+      "sha256": "860f61d5b30748f5582f1e88fc07ca20af473a24bae861565acfe5f3a6b36a0d"
+    },
+    "include/hw/misc/mst12_pcmcia.h": {
+      "bytes": 243,
+      "sha256": "120bcfd29997715c2d5de8e7e15aaa86d4a083026db036c815756f09fcea193d"
+    },
+    "include/hw/misc/mst12_tsp.h": {
+      "bytes": 225,
+      "sha256": "8ad2bc694977a32f3200a7a5386b127c60939eb33c54d820a409c57d1beddab6"
+    },
+    "include/hw/net/mst12_emac.h": {
+      "bytes": 229,
+      "sha256": "6586beeec9d2c63d2872ed8bfcd87ab91fba0437ddcb084789169f4b250fbcdc"
+    },
+    "include/hw/nvram/mst12_factory_eeprom.h": {
+      "bytes": 293,
+      "sha256": "a01f2679c2a54b643a3e7f1acaa7eec877f8adcb04937b6f61ae4df04a2500da"
+    },
+    "include/hw/sd/mst12_fcie.h": {
+      "bytes": 148,
+      "sha256": "e8c001f87080e7ff417987d63cd6c7949b9d37c7027be722da7d613b23641891"
+    },
+    "include/hw/timer/a9gtimer.h": {
+      "bytes": 2944,
+      "sha256": "0bbc494a1c23b9bcd86276f10f800ccf32263232b0037f56607d2bf490fd20b0"
+    },
+    "include/hw/timer/arm_mptimer.h": {
+      "bytes": 1537,
+      "sha256": "4a39dcfa793aa510184f9893a23a73fbfd9794a11e0af69420128e3ea8973da3"
+    },
+    "include/hw/usb/mst12_ehci.h": {
+      "bytes": 265,
+      "sha256": "7eeab0d2ef6fcdfead8c74a32372fd26acc6c02568380ca146f7804ef26f0164"
+    }
+  },
+  "validation": {
+    "git_apply_check": true,
+    "all_target_files_match": true,
+    "reverse_application_restores_base": true
+  }
+}

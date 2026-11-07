@@ -1,0 +1,9 @@
+* text=auto
+*.patch text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.cmd text eol=crlf
+*.png binary
+patches/series text eol=lf

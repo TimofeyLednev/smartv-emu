@@ -1,0 +1,315 @@
+diff --git a/hw/timer/a9gtimer.c b/hw/timer/a9gtimer.c
+index 690140f5a6cfc8a38f11c97521bfe3216e74d9c3..43b5d7747c08f21a246f9054224fb09ad8e63b0e 100644
+--- a/hw/timer/a9gtimer.c
++++ b/hw/timer/a9gtimer.c
+@@ -24,6 +24,7 @@
+ #include "hw/hw.h"
+ #include "hw/irq.h"
+ #include "hw/qdev-properties.h"
++#include "hw/qdev-clock.h"
+ #include "hw/timer/a9gtimer.h"
+ #include "migration/vmstate.h"
+ #include "qapi/error.h"
+@@ -60,12 +61,12 @@ static inline int a9_gtimer_get_current_cpu(A9GTimerState *s)
+     return current_cpu->cpu_index;
+ }
+ 
+-static inline uint64_t a9_gtimer_get_conv(A9GTimerState *s)
++static inline uint64_t a9_gtimer_get_divisor(A9GTimerState *s)
+ {
+     uint64_t prescale = extract32(s->control, R_CONTROL_PRESCALER_SHIFT,
+                                   R_CONTROL_PRESCALER_LEN);
+ 
+-    return (prescale + 1) * 10;
++    return prescale + 1;
+ }
+ 
+ static A9GTimerUpdate a9_gtimer_get_update(A9GTimerState *s)
+@@ -73,8 +74,12 @@ static A9GTimerUpdate a9_gtimer_get_update(A9GTimerState *s)
+     A9GTimerUpdate ret;
+ 
+     ret.now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+-    ret.new = s->ref_counter +
+-              (ret.now - s->cpu_ref_time) / a9_gtimer_get_conv(s);
++    ret.new = s->counter;
++    if (s->control & R_CONTROL_TIMER_ENABLE) {
++        ret.new = s->ref_counter +
++                  clock_ns_to_ticks(s->clk, ret.now - s->cpu_ref_time) /
++                  a9_gtimer_get_divisor(s);
++    }
+     return ret;
+ }
+ 
+@@ -114,10 +119,26 @@ static void a9_gtimer_update(A9GTimerState *s, bool sync)
+     }
+ 
+     timer_del(s->timer);
+-    if (next_cdiff) {
++    if (next_cdiff && clock_is_enabled(s->clk)) {
++        uint64_t divisor = a9_gtimer_get_divisor(s);
++        uint64_t cycles;
++        uint64_t delay;
++
++        if ((uint64_t)next_cdiff > UINT64_MAX / divisor) {
++            timer_mod(s->timer, INT64_MAX);
++        } else {
++            cycles = next_cdiff * divisor;
++            delay = clock_ticks_to_ns(s->clk, cycles);
++            /* Round fractional periods up so the compare cannot fire early. */
++            if (delay < INT64_MAX &&
++                clock_ns_to_ticks(s->clk, delay) < cycles) {
++                delay++;
++            }
++            timer_mod(s->timer, delay > INT64_MAX - update.now ?
++                      INT64_MAX : update.now + delay);
++        }
+         DB_PRINT("scheduling qemu_timer to fire again in %"
+                  PRIx64 " cycles\n", next_cdiff);
+-        timer_mod(s->timer, update.now + next_cdiff * a9_gtimer_get_conv(s));
+     }
+ 
+     if (s->control & R_CONTROL_TIMER_ENABLE) {
+@@ -137,6 +158,26 @@ static void a9_gtimer_update_no_sync(void *opaque)
+     a9_gtimer_update(s, false);
+ }
+ 
++static void a9_gtimer_clock_update(void *opaque, ClockEvent event)
++{
++    A9GTimerState *s = opaque;
++
++    if (s->timer) {
++        /* Save elapsed ticks at the old rate before rescheduling at the new. */
++        a9_gtimer_update(s, event == ClockPreUpdate);
++    }
++}
++
++static void a9_gtimer_init(Object *obj)
++{
++    A9GTimerState *s = A9_GTIMER(obj);
++
++    s->clk = qdev_init_clock_in(DEVICE(obj), "clk", a9_gtimer_clock_update,
++                                s, ClockPreUpdate | ClockUpdate);
++    /* Preserve the legacy rate for boards which do not connect a clock. */
++    clock_set_hz(s->clk, 100000000);
++}
++
+ static uint64_t a9_gtimer_read(void *opaque, hwaddr addr, unsigned size)
+ {
+     A9GTimerPerCPU *gtb = (A9GTimerPerCPU *)opaque;
+@@ -329,6 +370,24 @@ static bool vmstate_a9_gtimer_control_needed(void *opaque)
+     return s->control != 0;
+ }
+ 
++static bool vmstate_a9_gtimer_clock_needed(void *opaque)
++{
++    A9GTimerState *s = opaque;
++
++    return clock_get(s->clk) != CLOCK_PERIOD_FROM_HZ(100000000);
++}
++
++static const VMStateDescription vmstate_a9_gtimer_clock = {
++    .name = "arm.cortex-a9-global-timer/clock",
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .needed = vmstate_a9_gtimer_clock_needed,
++    .fields = (const VMStateField[]) {
++        VMSTATE_CLOCK(clk, A9GTimerState),
++        VMSTATE_END_OF_LIST()
++    }
++};
++
+ static const VMStateDescription vmstate_a9_gtimer_per_cpu = {
+     .name = "arm.cortex-a9-global-timer.percpu",
+     .version_id = 1,
+@@ -369,6 +428,7 @@ static const VMStateDescription vmstate_a9_gtimer = {
+     },
+     .subsections = (const VMStateDescription * const []) {
+         &vmstate_a9_gtimer_control,
++        &vmstate_a9_gtimer_clock,
+         NULL
+     }
+ };
+@@ -391,6 +451,7 @@ static const TypeInfo a9_gtimer_info = {
+     .name          = TYPE_A9_GTIMER,
+     .parent        = TYPE_SYS_BUS_DEVICE,
+     .instance_size = sizeof(A9GTimerState),
++    .instance_init = a9_gtimer_init,
+     .class_init    = a9_gtimer_class_init,
+ };
+ 
+diff --git a/hw/timer/arm_mptimer.c b/hw/timer/arm_mptimer.c
+index 7cc5915e9ec498e2b37dad884e1abcd0e09163a7..1df213b1b97828b6787cd35456ed55bb7e82ed7d 100644
+--- a/hw/timer/arm_mptimer.c
++++ b/hw/timer/arm_mptimer.c
+@@ -24,6 +24,7 @@
+ #include "hw/irq.h"
+ #include "hw/ptimer.h"
+ #include "hw/qdev-properties.h"
++#include "hw/qdev-clock.h"
+ #include "hw/timer/arm_mptimer.h"
+ #include "migration/vmstate.h"
+ #include "qapi/error.h"
+@@ -58,10 +59,10 @@ static inline void timerblock_update_irq(TimerBlock *tb)
+     qemu_set_irq(tb->irq, tb->status && (tb->control & 4));
+ }
+ 
+-/* Return conversion factor from mpcore timer ticks to qemu timer ticks.  */
++/* Return the programmable input-clock divisor. */
+ static inline uint32_t timerblock_scale(uint32_t control)
+ {
+-    return (((control >> 8) & 0xff) + 1) * 10;
++    return ((control >> 8) & 0xff) + 1;
+ }
+ 
+ /* Must be called within a ptimer transaction block */
+@@ -155,7 +156,8 @@ static void timerblock_write(void *opaque, hwaddr addr,
+             ptimer_stop(tb->timer);
+         }
+         if ((control & 0xff00) != (value & 0xff00)) {
+-            ptimer_set_period(tb->timer, timerblock_scale(value));
++            ptimer_set_period_from_clock(tb->timer, tb->clk,
++                                         timerblock_scale(value));
+         }
+         if (value & 1) {
+             uint64_t count = ptimer_get_count(tb->timer);
+@@ -222,7 +224,7 @@ static void timerblock_reset(TimerBlock *tb)
+         ptimer_transaction_begin(tb->timer);
+         ptimer_stop(tb->timer);
+         ptimer_set_limit(tb->timer, 0, 1);
+-        ptimer_set_period(tb->timer, timerblock_scale(0));
++        ptimer_set_period_from_clock(tb->timer, tb->clk, timerblock_scale(0));
+         ptimer_transaction_commit(tb->timer);
+     }
+ }
+@@ -237,10 +239,38 @@ static void arm_mptimer_reset(DeviceState *dev)
+     }
+ }
+ 
++static void arm_mptimer_clock_update(void *opaque, ClockEvent event)
++{
++    ARMMPTimerState *s = opaque;
++    unsigned i;
++
++    for (i = 0; i < s->num_cpu; i++) {
++        TimerBlock *tb = &s->timerblock[i];
++
++        if (tb->timer) {
++            ptimer_transaction_begin(tb->timer);
++            ptimer_set_period_from_clock(tb->timer, s->clk,
++                                         timerblock_scale(tb->control));
++            if (clock_is_enabled(s->clk)) {
++                timerblock_run(tb->timer, tb->control,
++                               ptimer_get_count(tb->timer));
++            } else {
++                ptimer_stop(tb->timer);
++            }
++            ptimer_transaction_commit(tb->timer);
++        }
++    }
++}
++
+ static void arm_mptimer_init(Object *obj)
+ {
+     ARMMPTimerState *s = ARM_MPTIMER(obj);
+ 
++    s->clk = qdev_init_clock_in(DEVICE(obj), "clk", arm_mptimer_clock_update,
++                                s, ClockUpdate);
++    /* Preserve the legacy rate for boards which do not connect a clock. */
++    clock_set_hz(s->clk, 100000000);
++
+     memory_region_init_io(&s->iomem, obj, &arm_thistimer_ops, s,
+                           "arm_mptimer_timer", 0x20);
+     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
+@@ -269,6 +299,8 @@ static void arm_mptimer_realize(DeviceState *dev, Error **errp)
+      */
+     for (i = 0; i < s->num_cpu; i++) {
+         TimerBlock *tb = &s->timerblock[i];
++
++        tb->clk = s->clk;
+         tb->timer = ptimer_init(timerblock_tick, tb, PTIMER_POLICY);
+         sysbus_init_irq(sbd, &tb->irq);
+         memory_region_init_io(&tb->iomem, OBJECT(s), &timerblock_ops, tb,
+@@ -289,6 +321,24 @@ static const VMStateDescription vmstate_timerblock = {
+     }
+ };
+ 
++static bool vmstate_arm_mptimer_clock_needed(void *opaque)
++{
++    ARMMPTimerState *s = opaque;
++
++    return clock_get(s->clk) != CLOCK_PERIOD_FROM_HZ(100000000);
++}
++
++static const VMStateDescription vmstate_arm_mptimer_clock = {
++    .name = "arm_mptimer/clock",
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .needed = vmstate_arm_mptimer_clock_needed,
++    .fields = (const VMStateField[]) {
++        VMSTATE_CLOCK(clk, ARMMPTimerState),
++        VMSTATE_END_OF_LIST()
++    }
++};
++
+ static const VMStateDescription vmstate_arm_mptimer = {
+     .name = "arm_mptimer",
+     .version_id = 3,
+@@ -297,6 +347,10 @@ static const VMStateDescription vmstate_arm_mptimer = {
+         VMSTATE_STRUCT_VARRAY_UINT32(timerblock, ARMMPTimerState, num_cpu,
+                                      3, vmstate_timerblock, TimerBlock),
+         VMSTATE_END_OF_LIST()
++    },
++    .subsections = (const VMStateDescription * const []) {
++        &vmstate_arm_mptimer_clock,
++        NULL
+     }
+ };
+ 
+diff --git a/include/hw/timer/a9gtimer.h b/include/hw/timer/a9gtimer.h
+index 6ae9122e4b69b5761314e5576da53b2d47fb52b1..33db73b802fa88a8b55b653f462f5b87a309ebcc 100644
+--- a/include/hw/timer/a9gtimer.h
++++ b/include/hw/timer/a9gtimer.h
+@@ -24,6 +24,7 @@
+ #define A9GTIMER_H
+ 
+ #include "hw/sysbus.h"
++#include "hw/clock.h"
+ #include "qom/object.h"
+ 
+ #define A9_GTIMER_MAX_CPUS 4
+@@ -77,6 +78,7 @@ struct A9GTimerState {
+     MemoryRegion iomem;
+     /* static props */
+     uint32_t num_cpu;
++    Clock *clk;
+ 
+     QEMUTimer *timer;
+ 
+diff --git a/include/hw/timer/arm_mptimer.h b/include/hw/timer/arm_mptimer.h
+index 65a96e2a0dc8a4001e0cd69959b4207f4a81bf89..0a5fb7eb50d95ddf602e32f766ec408fdd408dfd 100644
+--- a/include/hw/timer/arm_mptimer.h
++++ b/include/hw/timer/arm_mptimer.h
+@@ -22,6 +22,7 @@
+ #define HW_TIMER_ARM_MPTIMER_H
+ 
+ #include "hw/sysbus.h"
++#include "hw/clock.h"
+ #include "qom/object.h"
+ 
+ #define ARM_MPTIMER_MAX_CPUS 4
+@@ -31,6 +32,7 @@ typedef struct {
+     uint32_t control;
+     uint32_t status;
+     struct ptimer_state *timer;
++    Clock *clk;
+     qemu_irq irq;
+     MemoryRegion iomem;
+ } TimerBlock;
+@@ -44,6 +46,7 @@ struct ARMMPTimerState {
+     /*< public >*/
+ 
+     uint32_t num_cpu;
++    Clock *clk;
+     TimerBlock timerblock[ARM_MPTIMER_MAX_CPUS];
+     MemoryRegion iomem;
+ };

@@ -1,0 +1,2 @@
+# Only the synthetic ARM SMP/secure-monitor tests require this dependency.
+keystone-engine==0.9.2

@@ -1,0 +1,50 @@
+{
+  "firmware": "T-MST12DEUC",
+  "version": "1112.2",
+  "build_date": "2013-09-11",
+  "contains_firmware_bytes": false,
+  "payloads": [
+    {
+      "file": "exe.img",
+      "bytes": 217309184,
+      "sha256": "304669c33303824098dd9ddd677f1b2438dfa004b9f407d558781830f05b1263",
+      "needed_for_boot_disk": true
+    },
+    {
+      "file": "uncompexe.img",
+      "bytes": 229191680,
+      "sha256": "568ee27f87f32c4538620a0290ef5191f70147157be8cb826ae82574a3e2526b",
+      "needed_for_boot_disk": true
+    },
+    {
+      "file": "rootfs.img",
+      "bytes": 5763332,
+      "sha256": "55cafa6e6b63d19db84f25749faeeb9fa23ce5c612c275500e2c955ee58223d4",
+      "needed_for_boot_disk": true
+    },
+    {
+      "file": "uImage",
+      "bytes": 3485888,
+      "sha256": "abec17dff89b09aaf16698598d02b6e6f15c4661494e08ec7aba8892bd565016",
+      "needed_for_boot_disk": true
+    },
+    {
+      "file": "secos.bin",
+      "bytes": 398800,
+      "sha256": "6f1fad23acaed169c689d65fc8ffffa78300646d03856773f44237653164f997",
+      "needed_for_boot_disk": false
+    },
+    {
+      "file": "seret.bin",
+      "bytes": 124970,
+      "sha256": "f05d499d5bcd10d72c535473c5351a66fc3d8d7b0ab364d105da89fb20c1ced8",
+      "needed_for_boot_disk": true
+    },
+    {
+      "file": "rocommon.img",
+      "bytes": 296448000,
+      "sha256": "3d61503e5fb750a484a5016f75e1a60e493a55ea60e0205693e2d38454a65a0a",
+      "needed_for_boot_disk": true
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "screenshots": [
+    {
+      "file": "01-boot-logo.png",
+      "caption": "Original firmware logo drawn by the guest display diagnostic on the 1920x1080 panel; separate from full Orsay startup",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "514d1c21a2d8eb7adc9009449bc4535e8296616bffa11b35e723a633bc449e34",
+      "bytes": 15607,
+      "source": "QMP screendump of local QEMU guest, copied without image edits",
+      "firmware": "T-MST12DEUC 1112.2",
+      "capture_date": "2026-11-06",
+      "export_date": "2026-11-07"
+    },
+    {
+      "file": "02-smart-hub-introduction.png",
+      "caption": "Original Smart Hub introduction; embedded promotional app image",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "386c3201cd49ef9b953469f34a493a2abeed0d487bd2c59da9490835d4359f0e",
+      "bytes": 296487,
+      "source": "QMP screendump of local QEMU guest, copied without image edits",
+      "firmware": "T-MST12DEUC 1112.2",
+      "capture_date": "2026-11-07",
+      "export_date": "2026-11-07"
+    },
+    {
+      "file": "03-smart-hub-welcome.png",
+      "caption": "Interactive original Smart Hub welcome page",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "1f65b73fee5723dc00462f82c451ebc165f3a2130f3f226864da3e213ed5a528",
+      "bytes": 86720,
+      "source": "QMP screendump of local QEMU guest, copied without image edits",
+      "firmware": "T-MST12DEUC 1112.2",
+      "capture_date": "2026-11-07",
+      "export_date": "2026-11-07"
+    },
+    {
+      "file": "04-wired-network-complete.png",
+      "caption": "Original wired gateway and HTTP checks complete",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "202d3215bd0e5762f12d4213c42db6d0456aca1e12be742ea397a872a8bd7447",
+      "bytes": 121727,
+      "source": "QMP screendump of local QEMU guest, copied without image edits",
+      "firmware": "T-MST12DEUC 1112.2",
+      "capture_date": "2026-11-07",
+      "export_date": "2026-11-07"
+    },
+    {
+      "file": "05-setup-complete.png",
+      "caption": "Original setup completes with required terms accepted and optional sharing disabled",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "93eea500399466969cc5784eec611381fca2c7ae3c32cf22844386722f3b4bac",
+      "bytes": 107792,
+      "source": "QMP screendump of local QEMU guest, copied without image edits",
+      "firmware": "T-MST12DEUC 1112.2",
+      "capture_date": "2026-11-07",
+      "export_date": "2026-11-07"
+    },
+    {
+      "file": "06-smart-hub-apps.png",
+      "caption": "Interactive original Apps dashboard with the built-in WebBrowser selected; rendering remains incomplete",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "71770a41e3c02454ec213f561e4719ee7a71b6675c7b24dc59a15230b8e3b221",
+      "bytes": 190980,
+      "source": "QMP screendump of local QEMU guest, copied without image edits",
+      "firmware": "T-MST12DEUC 1112.2",
+      "capture_date": "2026-11-07",
+      "export_date": "2026-11-07"
+    }
+  ],
+  "notes": "The v7 captures use the earlier independent alu renderer binary; the patch series contains the subsequently tested shader lowering."
+}

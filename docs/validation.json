@@ -1,0 +1,268 @@
+{
+  "snapshot_date": "2026-11-07",
+  "host": "Windows / MSYS2 UCRT64",
+  "qemu_version": "10.1.0",
+  "base_commit": "f8b2f64e2336a28bf0d50b6ef8a7d8c013e9bcf3",
+  "research_binary_sha256": "545f1d4e378837ce14f504b71cb68f04e275440e4c59953a0df8b288aa83357d",
+  "research_binary_bytes": 97857109,
+  "patched_sources_verified_in_two_checkouts": 61,
+  "patch_export_validation": {
+    "git_apply_check": true,
+    "all_target_files_match": true,
+    "reverse_application_restores_base": true
+  },
+  "synthetic_check_groups": 133,
+  "synthetic_checks": [
+    {
+      "name": "FCIE/eMMC",
+      "status": "passed",
+      "groups": 7,
+      "provenance": "retained export check",
+      "checks": [
+        "FIFO clock ready across repeated reads and both DMA directions",
+        "eMMC enumeration and OCR/CID/CSD responses",
+        "EXT_CSD read by DMA",
+        "single-block DMA read",
+        "multiple-block DMA read and stop",
+        "DMA write/readback in a temporary snapshot",
+        "interrupt delivery and write-one-to-clear acknowledgement"
+      ]
+    },
+    {
+      "name": "GOP rotated panel",
+      "status": "passed",
+      "groups": 26,
+      "provenance": "current portable helper rerun",
+      "checks": [
+        "bank isolation and global selector",
+        "all 16 direct banks share storage and byte lanes with banked MMIO",
+        "register programming remains invisible before commit",
+        "ARGB8888 scanout and padded pitch, every pixel checked",
+        "update acknowledgement clears four busy bits",
+        "ARGB8888 hmirror samples every pixel with padded pitch",
+        "ARGB8888 vmirror samples every pixel with padded pitch",
+        "ARGB8888 hvmirror samples every pixel with padded pitch",
+        "GOP0 RBLK offset supplies the first mirrored row without shifting the buffer base",
+        "backward row fetch outside RAM is rejected without reading another region",
+        "force-write enable/disable without a separate commit",
+        "GOP3 backward row address and both mirrors work through direct bank commits",
+        "direct GOP3 pixel scanout, selected update pulse and force-write",
+        "unmapped buffers, short pitch and oversized dimensions are rejected",
+        "RGB565 conversion, every pixel checked",
+        "RGB565 mirrors use two-byte source pixels and the programmed last-row address",
+        "1920x1080 panel preserves window position and black background",
+        "window pixels clip safely at the right/bottom panel edges",
+        "GOP mux composes transparent, partial and opaque foreground pixels",
+        "reversing mux order changes the actual front layer",
+        "GOP alpha polarity follows the general alpha-inverse control",
+        "constant alpha blends without using framebuffer alpha bytes",
+        "12-bit horizontal and vertical stretch ratios scale real source pixels",
+        "mirror source coordinates are applied before stretch sampling",
+        "stretch selects each source pixel and clips at panel boundaries",
+        "reset clears scanout and register state"
+      ]
+    },
+    {
+      "name": "Mali MMU/IRQ",
+      "status": "passed",
+      "groups": 13,
+      "provenance": "retained export check",
+      "checks": [
+        "read-only GP/L2/four-PP identification",
+        "halfword/byte lanes, padding and separate PP register banks",
+        "GP/PP soft-reset completion, high-half clear and PP force reset",
+        "five MMUs: directory alignment, reset, paging and stall commands",
+        "masked/shared IRQ245 delivery and independent source acknowledgement",
+        "empty VS/PLBU lists complete without rendering or DMA",
+        "two-level GP page walk, stalled fetch/resume and unsupported-command error",
+        "missing DTE, latched fault/IRQ and repair with PAGE_FAULT_DONE",
+        "read-only job trace cannot introduce a fault for an unfetched command",
+        "PTE read permissions reject a write-only command page",
+        "each PP fetches through its own MMU and reports unsupported rendering",
+        "translated command data observed in GPU diagnostics",
+        "system reset clears engine/MMU/IRQ state"
+      ]
+    },
+    {
+      "name": "Mali rendering",
+      "status": "passed",
+      "groups": 27,
+      "provenance": "retained export check",
+      "checks": [
+        "complete setup decodes tile dimensions, pointers and heap, then signals completion",
+        "functional empty-list representation preserves CPU-visible raw polygon RAM",
+        "inconsistent pointer capacity and block stride report command failure",
+        "missing END cannot create a completed polygon batch",
+        "unsupported geometry reports failure rather than producing an empty batch",
+        "malformed 64-bit command boundaries report failure",
+        "vertex shader computes add/multiply for separate vertices and writes exact float32 outputs",
+        "half-float varyings use IEEE rounding and the submitted vertex stride",
+        "XYZ float32 varying stores preserve unwritten W, stride padding and guard bytes",
+        "XYZ half-float varying stores preserve unwritten W, stride padding and guard bytes",
+        "unknown active vertex opcode reports a GP shader error",
+        "PP clear writes exact BGRA pixels for aligned zero-size registers and preserves row padding",
+        "constant fragment execution honors a partial tile boundary without touching pixels outside the surface",
+        "indexed triangle rasterization applies scissor, source-alpha blending, and unique shared-edge coverage",
+        "constant fragment results are reused within a draw and refreshed for a new shader job",
+        "single vector ALU captures all source components before an aliased swizzle write",
+        "parallel vector units read the original bank when one unit overwrites another unit's source",
+        "unscaled vector multiply forwards its complete result to the simultaneous accumulator",
+        "branch predicates see the old register bank before a simultaneous ALU destination is committed",
+        "fragment texture loads sample all four nearest-filtered texels from interpolated coordinates",
+        "register-relative varying loads retain all runtime inputs and decoded half constants across instructions",
+        "an overwritten texture result still executes its sampler and preserves failed-job RAM",
+        "bilinear filtering combines four texels with exact center weights",
+        "Utgard tiled writeback produces actual color data for every tile",
+        "unsupported texture formats fail before RAM writeback",
+        "writeback enforces PP page permissions, preserves protected RAM, and resumes after fault repair",
+        "system reset clears functional GPU state and counters"
+      ]
+    },
+    {
+      "name": "RIU/panel straps",
+      "status": "passed",
+      "groups": 13,
+      "provenance": "current portable helper rerun",
+      "checks": [
+        "MIU flush request/completion",
+        "three UTMI PHY triggers and persistent completion status",
+        "GPIO43 reset selects the LCD panel family",
+        "external low and read-only input preserve adjacent bits",
+        "direction changes select output feedback or external input",
+        "byte, halfword and word accesses retain neighboring latches",
+        "reset clears PHY state",
+        "reset releases the pad, clears latches and retains the board strap",
+        "GPIO10 reset exposes the original Full HD strap",
+        "GPIO10 external low and read-only input preserve adjacent controls",
+        "GPIO10 direction selects actual output feedback or the external strap",
+        "GPIO10 byte, halfword and word access retain neighboring latches",
+        "GPIO10 reset clears output state and retains the board strap"
+      ]
+    },
+    {
+      "name": "SMC bootstrap",
+      "status": "passed",
+      "groups": 7,
+      "provenance": "retained export check",
+      "checks": [
+        "valid WSM base/size and error for an unknown service on both CPUs",
+        "instruction immediately after SMC executes (PC advances once)",
+        "r1-r12, SVC SP/LR and CPSR flags preserved",
+        "protected MVBAR access confirms return to Normal World on both CPUs",
+        "Normal World controls FIQ and asynchronous-abort masks on both CPUs",
+        "guest reads/writes the actual WSM page returned by the monitor",
+        "monitor vectors and both CPU return paths work again after reset"
+      ]
+    },
+    {
+      "name": "Secondary core",
+      "status": "passed",
+      "groups": 5,
+      "provenance": "retained export check",
+      "checks": [
+        "secondary core waits with an empty mailbox",
+        "high-half write alone does not release the core",
+        "complete mailbox waits for the boot SGI",
+        "CPU1 executes the target and boot SGI is acknowledged",
+        "reset parks the secondary core and clears the mailbox"
+      ]
+    },
+    {
+      "name": "MST12 timers",
+      "status": "passed",
+      "groups": 12,
+      "provenance": "retained export check",
+      "checks": [
+        "global timer input rate and disabled counter",
+        "global timer stop retains the count",
+        "global timer fractional period at maximum prescaler",
+        "global timer 64-bit counter rollover",
+        "global comparator boundary, fractional deadline and IRQ clear after disabling compare",
+        "global comparator auto-increment and repeated IRQ",
+        "far-future comparator deadline saturates without overflow",
+        "private timer input clock, one-shot expiry and IRQ clear",
+        "watchdog counter input clock, one-shot expiry and IRQ clear",
+        "private timer fractional period at maximum prescaler",
+        "private timer periodic reload, IRQ retrigger and stop",
+        "SoC reset clears timers and retains the configured input frequency"
+      ]
+    },
+    {
+      "name": "vexpress-a9 timer fallback",
+      "status": "passed",
+      "groups": 12,
+      "provenance": "retained export check",
+      "checks": [
+        "global timer input rate and disabled counter",
+        "global timer stop retains the count",
+        "global timer fractional period at maximum prescaler",
+        "global timer 64-bit counter rollover",
+        "global comparator boundary, fractional deadline and IRQ clear after disabling compare",
+        "global comparator auto-increment and repeated IRQ",
+        "far-future comparator deadline saturates without overflow",
+        "private timer input clock, one-shot expiry and IRQ clear",
+        "watchdog counter input clock, one-shot expiry and IRQ clear",
+        "private timer fractional period at maximum prescaler",
+        "private timer periodic reload, IRQ retrigger and stop",
+        "SoC reset clears timers and retains the configured input frequency"
+      ]
+    },
+    {
+      "name": "Bridge packet/TLS protocol",
+      "status": "passed",
+      "groups": 11,
+      "provenance": "retained export check",
+      "checks": [
+        "TCP flags 0x2: translation preserves sequence, flags and payload with valid checksums",
+        "TCP flags 0x18: translation preserves sequence, flags and payload with valid checksums",
+        "TCP flags 0x11: translation preserves sequence, flags and payload with valid checksums",
+        "unselected traffic preserves every byte",
+        "a compressed DNS response learns Hub addresses without changing its bytes",
+        "both real redirector socket directions preserve split headers and complete packets",
+        "a full TLS 1.0 AES handshake carries HTTP and rejects an unselected host",
+        "a client waiting to send ClientHello does not block another real TLS handshake",
+        "a real TLS handshake succeeds after ClientHello is delayed more than 20 host seconds",
+        "an extended guest timeout is reported and invalid budgets are rejected before allocating sockets",
+        "a configured one-second timeout closes an idle real TLS socket and records its start and failure"
+      ]
+    }
+  ],
+  "launcher_checks": [
+    {
+      "name": "launcher-runtime-v2",
+      "status": "passed",
+      "disk_unchanged": true,
+      "qmp_established_before_boot": true
+    },
+    {
+      "name": "viewer-runtime-v3",
+      "status": "passed",
+      "disk_unchanged": true,
+      "qmp_established_before_boot": true
+    },
+    {
+      "name": "bridge-runtime-v4",
+      "status": "passed",
+      "disk_unchanged": true,
+      "qmp_established_before_boot": true
+    }
+  ],
+  "viewer_check_groups": 4,
+  "viewer_checks": [
+    "The fresh localhost viewer serves the exported page with remote controls enabled",
+    "The viewer captures the fresh guest's actual 1920x1080 panel as PNG",
+    "A Menu tap is submitted through QMP to the MICOM model and recorded locally",
+    "Stop TV ends this VM and verifies that the backing disk remains unchanged"
+  ],
+  "optional_bridge_launch": {
+    "status": "passed",
+    "stopped": true,
+    "firmware_ca_verified": true
+  },
+  "limits": [
+    "The export was not rebuilt on Linux or another host",
+    "Short launch checks do not automatically recognize Orsay UI",
+    "Published dashboard captures use the retained earlier ALU renderer",
+    "Physical RAM layout, secure OS, video/audio, visible browser and restart persistence remain incomplete"
+  ]
+}

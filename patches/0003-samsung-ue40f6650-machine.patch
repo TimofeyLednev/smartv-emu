@@ -1,0 +1,1182 @@
+diff --git a/hw/arm/Kconfig b/hw/arm/Kconfig
+index 2aa4b5d77864ff01e69650711e7d914f351e9966..d5df85b95edd7d2bb957737e539d74f66eec1c0c 100644
+--- a/hw/arm/Kconfig
++++ b/hw/arm/Kconfig
+@@ -692,3 +692,22 @@ config ARMSSE
+     select UNIMP
+     select SSE_COUNTER
+     select SSE_TIMER
++
++config SAMSUNG_MSTAR_UE40F6650
++    bool
++    default y
++    depends on TCG && ARM
++    select A9MPCORE
++    select PL310
++    select SERIAL_MM
++    select MST12_FCIE
++    select MST12_GOP
++    select MST12_MALI
++    select MST12_EHCI
++    select MST12_TSP
++    select MST12_EFUSE
++    select MST12_EMAC
++    select MST12_GPIO_I2C
++    select MST12_HWIIC
++    select MST12_SI2176
++    select MST12_FACTORY_EEPROM
+diff --git a/hw/arm/meson.build b/hw/arm/meson.build
+index dc68391305fe12103a2e0a320330bf16a7b7a5e7..fc0a558703e93938f3ba42fe4927562b9d401287 100644
+--- a/hw/arm/meson.build
++++ b/hw/arm/meson.build
+@@ -81,6 +81,8 @@ arm_common_ss.add(when: 'CONFIG_SX1', if_true: files('omap_sx1.c'))
+ arm_common_ss.add(when: 'CONFIG_VERSATILE', if_true: files('versatilepb.c'))
+ arm_common_ss.add(when: 'CONFIG_VEXPRESS', if_true: files('vexpress.c'))
+ 
++arm_common_ss.add(when: 'CONFIG_SAMSUNG_MSTAR_UE40F6650', if_true: files('samsung_mstar_ue40f6650.c'))
++
+ arm_common_ss.add(files('boot.c'))
+ 
+ hw_arch += {'arm': arm_ss}
+diff --git a/hw/arm/samsung_mstar_ue40f6650.c b/hw/arm/samsung_mstar_ue40f6650.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce2ffabd96aa318f20ebcf7f167de5deb2656a1e
+--- /dev/null
++++ b/hw/arm/samsung_mstar_ue40f6650.c
+@@ -0,0 +1,1136 @@
++/*
++ * Samsung UE40F6650 / T-MST12DEUC experimental kernel bring-up board.
++ * SPDX-License-Identifier: GPL-2.0-or-later
++ *
++ * The Edison Linux 3.0.33 image supplies the MMIO maps and kernel entry.
++ * See Project/NOTES.md for offsets and the distinction between firmware
++ * evidence and the provisional CPU, RAM size, clocks and IRQ wiring here.
++ * This directly boots a kernel; it does not implement Samsung secure boot.
++ */
++
++#include "qemu/osdep.h"
++#include "qapi/error.h"
++#include "qemu/bswap.h"
++#include "qemu/error-report.h"
++#include "qemu/log.h"
++#include "qemu/units.h"
++#include "hw/arm/boot.h"
++#include "hw/boards.h"
++#include "hw/char/serial-mm.h"
++#include "hw/cpu/a9mpcore.h"
++#include "hw/clock.h"
++#include "hw/display/mst12_ge.h"
++#include "hw/display/mst12_gop.h"
++#include "hw/display/mst12_mali.h"
++#include "hw/display/mst12_mload.h"
++#include "hw/display/mst12_mvd.h"
++#include "hw/display/mst12_pq_sram.h"
++#include "hw/misc/mst12_micom.h"
++#include "hw/i2c/mst12_gpio_i2c.h"
++#include "hw/i2c/mst12_hwiic.h"
++#include "hw/i2c/mst12_si2176.h"
++#include "hw/irq.h"
++#include "hw/misc/mst12_efuse.h"
++#include "hw/misc/mst12_miu_pll.h"
++#include "hw/misc/mst12_pcmcia.h"
++#include "hw/misc/mst12_tsp.h"
++#include "hw/net/mst12_emac.h"
++#include "hw/nvram/mst12_factory_eeprom.h"
++#include "hw/qdev-properties.h"
++#include "hw/qdev-clock.h"
++#include "hw/sd/mst12_fcie.h"
++#include "hw/sd/sd.h"
++#include "hw/sysbus.h"
++#include "hw/usb/mst12_ehci.h"
++#include "net/net.h"
++#include "system/address-spaces.h"
++#include "system/blockdev.h"
++#include "system/reset.h"
++#include "system/system.h"
++#include "target/arm/cpu.h"
++
++#define TYPE_SAMSUNG_MSTAR_MACHINE \
++    MACHINE_TYPE_NAME("samsung_mstar_ue40f6650")
++OBJECT_DECLARE_SIMPLE_TYPE(SamsungMStarState, SAMSUNG_MSTAR_MACHINE)
++
++#define MST_KERNEL_RAM_BASE       0x40200000
++#define MST_KERNEL_RAM_LIMIT      (256 * MiB)
++#define MST_KERNEL_RAM2_BASE      0x60000000
++#define MST_PRIVATE_BASE          0x16000000
++#define MST_L2_BASE               0x15000000
++#define MST_RIU_BASE              0x1f000000
++#define MST_RIU_SIZE              (4 * MiB)
++#define MST_UART0_OFFSET          0x201300
++#define MST_UART1_OFFSET          0x220c00
++#define MST_UART_BAUD_BASE        (123000000 / 16)
++#define MST_PIU_UART_BAUD_BASE    (108000000 / 16)
++#define MST_CLOCK_MULT_OFFSET     0x22184c
++#define MST_MIU_FLUSH_OFFSET      0x203114
++#define MST_MIU_STATUS_OFFSET     0x203140
++#define MST_USB1_CAL_OFFSET       0x207578
++#define MST_USB2_CAL_OFFSET       0x207478
++#define MST_USB3_CAL_OFFSET       0x207278
++#define MST_EHCI1_OFFSET          0x204800
++#define MST_EHCI2_OFFSET          0x201a00
++#define MST_EHCI3_OFFSET          0x227200
++#define MST_FCIE_OFFSET           0x222600
++#define MST_GIC_IRQS              256
++#define MST_DTVLOG_BASE           0x5da80000
++#define MST_DTVLOG_SIZE           0x41000
++#define MST_EMAC_RAM_BASE         0x50e00000
++#define MST_EMAC_RAM_SIZE         MiB
++#define MST_GOP_OFFSET            0x203e00
++#define MST_GOP_DIRECT_OFFSET     0x240400
++#define MST_TSP_OFFSET            0x202a00
++#define MST_EFUSE_OFFSET          0x004000
++#define MST_MIU_PLL_OFFSET        0x221a00
++#define MST_MALI_OFFSET           0x280000
++#define MST_MLOAD_OFFSET          0x263e00
++#define MST_PQ_SRAM_OFFSET        0x264700
++#define MST_IIC2_OFFSET           0x205620
++#define MST_PANEL_GPIO_OEN        0x002845
++#define MST_PANEL_GPIO_OUT        0x002848
++#define MST_PANEL_GPIO_IN         0x002849
++#define MST_PANEL_GPIO_MASK       0x02
++#define MST_PANEL_FHD_GPIO        0x001e04
++#define MST_PANEL_FHD_OEN         0x01
++#define MST_PANEL_FHD_OUT         0x02
++#define MST_PANEL_FHD_IN          0x04
++#define MST_FRAMEBUFFER_BASE      0x51000000
++#define MST_FRAMEBUFFER_SIZE      (32 * MiB)
++#define MST_VENDOR_GOP_BASE       0xa5800000
++#define MST_VENDOR_GOP_SIZE       (4 * MiB)
++#define MST_VENDOR_GOP1_BASE      0x53904000
++#define MST_VENDOR_GOP1_SIZE      (140 * MiB)
++#define MST_VENDOR_BANKS          6
++#define MST_PANEL_WIDTH           1920
++#define MST_PANEL_HEIGHT          1080
++#define MST_PERIPHERAL_CLOCK_HZ   450000000
++#define MST_BOOT_RAM_BASE         0x40000000
++#define MST_BOOT_RAM_SIZE         (2 * MiB)
++#define MST_SECONDARY_BOOT        0x40001000
++#define MST_MONITOR_VECTORS       MST_BOOT_RAM_BASE
++#define MST_MONITOR_IO            (MST_BOOT_RAM_BASE + 0x80)
++#define MST_MONITOR_WSM_BASE      0x50f00000
++#define MST_MONITOR_WSM_SIZE      0x1000
++#define MST_MONITOR_RAMLOG_BASE   (MST_MONITOR_WSM_BASE + MST_MONITOR_WSM_SIZE)
++#define MST_MONITOR_RAMLOG_SIZE   0x1000
++#define MST_MONITOR_RAM_SIZE \
++    (MST_MONITOR_WSM_SIZE + MST_MONITOR_RAMLOG_SIZE)
++
++typedef enum MSTSecureMonitor {
++    MST_MONITOR_OFF,
++    MST_MONITOR_ZERO,
++    MST_MONITOR_BOOTSTRAP,
++} MSTSecureMonitor;
++
++struct SamsungMStarState {
++    MachineState parent_obj;
++    MemoryRegion riu;
++    MemoryRegion register_bank;
++    MemoryRegion kernel_ram;
++    MemoryRegion kernel_ram2;
++    MemoryRegion dtvlog_ram;
++    MemoryRegion emac_ram;
++    MemoryRegion framebuffer_ram;
++    MemoryRegion vendor_ram[MST_VENDOR_BANKS];
++    MemoryRegion boot_ram;
++    MemoryRegion monitor_io;
++    MemoryRegion monitor_wsm;
++    Clock *peripheral_clock;
++    uint8_t *registers;
++    uint16_t interrupt_level[8];
++    qemu_irq cascade;
++    unsigned unimplemented_budget;
++    MSTSecureMonitor secure_monitor;
++    uint32_t monitor_calls;
++    uint32_t monitor_service;
++    uint32_t monitor_cpu;
++    uint32_t monitor_result[2];
++    bool monitor_wsm_registered;
++    bool native_scanout;
++    bool panel_rotate_180;
++    bool micom_enabled;
++    bool panel_gpio43_high;
++    bool panel_gpio10_high;
++    struct arm_boot_info boot_info;
++};
++
++/*
++ * Minimal tzdrv bootstrap ABI inferred from the unchanged module. Only a
++ * system WSM, empty RAM log and service/debug metadata are provided. This mode
++ * advertises no trusted applications and does not implement Samsung SecOS.
++ */
++static uint32_t mst_monitor_bootstrap(SamsungMStarState *s, CPUARMState *env)
++{
++    uint8_t *wsm = memory_region_get_ram_ptr(&s->monitor_wsm);
++
++    switch (s->monitor_service) {
++    case 0x201: /* MemMgr_AllocSystemWSM: physical base */
++        return MST_MONITOR_WSM_BASE;
++    case 0x202: /* MemMgr_AllocSystemWSM: size */
++        return MST_MONITOR_WSM_SIZE;
++    case 0x203: /* MemMgr_GetDedicatedWSM: no dedicated user allocation */
++    case 0x204:
++        return 0;
++    case 0x87ff0002: /* MemMgr_RegisterSystemWSM: return a WSM handle */
++        if (env->regs[3] != MST_MONITOR_WSM_SIZE) {
++            return UINT32_MAX;
++        }
++        s->monitor_wsm_registered = true;
++        return 1;
++    case 0x87ff0003: /* MemMgr_ReleaseSystemWSM */
++        if (!s->monitor_wsm_registered || env->regs[2] != 1) {
++            return UINT32_MAX;
++        }
++        s->monitor_wsm_registered = false;
++        return 0;
++    case 0xe7fe0000: /* SvcMgr_GetRamlogInfo: empty, backed log buffer */
++    case 0xe7fefede: /* SvcMgr_GetDebugLevel: disabled debug */
++    case 0xe7fe0001: /* SvcMgr_GetServiceList: zero advertised services */
++        if (!s->monitor_wsm_registered || env->regs[2] != 1 ||
++            env->regs[3] != MST_MONITOR_WSM_SIZE) {
++            return UINT32_MAX;
++        }
++        memset(wsm, 0, 8);
++        if (s->monitor_service == 0xe7fe0000) {
++            /* tz_ramlog_init/exit require a valid allocation for cleanup. */
++            stl_le_p(wsm, MST_MONITOR_RAMLOG_BASE);
++            stl_le_p(wsm + 4, MST_MONITOR_RAMLOG_SIZE);
++        }
++        memory_region_set_dirty(&s->monitor_wsm, 0, 8);
++        return 0;
++    default:
++        return UINT32_MAX;
++    }
++}
++
++/* Emulator diagnostic mailbox, not a register on the physical TV. */
++static uint64_t mst_monitor_read(void *opaque, hwaddr offset, unsigned size)
++{
++    SamsungMStarState *s = opaque;
++
++    switch (offset) {
++    case 0:
++        return current_cpu ? s->monitor_result[current_cpu->cpu_index] : 0;
++    case 4:
++        return s->monitor_service;
++    case 8:
++        return s->monitor_calls;
++    case 12:
++        return s->monitor_cpu;
++    default:
++        return 0;
++    }
++}
++
++static void mst_monitor_write(void *opaque, hwaddr offset, uint64_t value,
++                              unsigned size)
++{
++    SamsungMStarState *s = opaque;
++
++    if (offset != 0) {
++        return;
++    }
++    s->monitor_service = value;
++    s->monitor_calls++;
++    s->monitor_cpu = current_cpu ? current_cpu->cpu_index : UINT32_MAX;
++    if (current_cpu) {
++        CPUARMState *env = &ARM_CPU(current_cpu)->env;
++
++        s->monitor_result[s->monitor_cpu] =
++            s->secure_monitor == MST_MONITOR_BOOTSTRAP ?
++            mst_monitor_bootstrap(s, env) : 0;
++        /* r1 is temporarily saved in SP_mon by the tiny guest handler. */
++        qemu_log_mask(LOG_UNIMP,
++                      "MST12 %s SMC: cpu=%u service=0x%08x result=0x%08x "
++                      "r1=0x%08x r2=0x%08x r3=0x%08x r4=0x%08x\n",
++                      s->secure_monitor == MST_MONITOR_BOOTSTRAP ?
++                      "bootstrap" : "zero", s->monitor_cpu,
++                      s->monitor_service, s->monitor_result[s->monitor_cpu],
++                      env->regs[13], env->regs[2], env->regs[3], env->regs[4]);
++    }
++}
++
++static const MemoryRegionOps mst_monitor_ops = {
++    .read = mst_monitor_read,
++    .write = mst_monitor_write,
++    .endianness = DEVICE_LITTLE_ENDIAN,
++    .valid = {
++        .min_access_size = 4,
++        .max_access_size = 4,
++    },
++    .impl = {
++        .min_access_size = 4,
++        .max_access_size = 4,
++    },
++};
++
++static void mst_monitor_reset(void *opaque)
++{
++    SamsungMStarState *s = opaque;
++    CPUState *cs;
++
++    s->monitor_calls = 0;
++    s->monitor_service = 0;
++    s->monitor_cpu = 0;
++    memset(s->monitor_result, 0, sizeof(s->monitor_result));
++    s->monitor_wsm_registered = false;
++    if (s->secure_monitor == MST_MONITOR_BOOTSTRAP) {
++        memset(memory_region_get_ram_ptr(&s->monitor_wsm), 0,
++               MST_MONITOR_RAM_SIZE);
++        memory_region_set_dirty(&s->monitor_wsm, 0, MST_MONITOR_RAM_SIZE);
++    }
++    CPU_FOREACH(cs) {
++        /* Runs after arm_load_kernel's per-CPU reset handlers. */
++        ARM_CPU(cs)->env.cp15.mvbar = MST_MONITOR_VECTORS;
++        /* Linux owns the masks of our nonsecure interrupt sources. */
++        ARM_CPU(cs)->env.cp15.scr_el3 |= SCR_AW | SCR_FW;
++    }
++}
++
++static void mst_write_monitor(ARMCPU *cpu,
++                              const struct arm_boot_info *info)
++{
++    static const ARMInsnFixup monitor[] = {
++        { 0xeafffffe }, /* unused exception vectors stop here */
++        { 0xeafffffe },
++        { 0xea000004 }, /* SMC vector: branch to handler at +0x20 */
++        { 0xeafffffe },
++        { 0xeafffffe },
++        { 0xeafffffe },
++        { 0xeafffffe },
++        { 0xeafffffe },
++        { 0xe1a0d001 }, /* save r1 in the banked monitor SP; no stack */
++        { 0xe59f100c }, /* ldr r1, diagnostic mailbox address */
++        { 0xe5810000 }, /* str r0, [r1] ; record the service */
++        { 0xe5910000 }, /* ldr r0, [r1] ; monitor response */
++        { 0xe1a0100d }, /* restore r1 */
++        { 0xe1b0f00e }, /* movs pc, lr ; restore CPSR and Normal World */
++        { MST_MONITOR_IO },
++        { 0, FIXUP_TERMINATOR }
++    };
++
++    /*
++     * ARM exception entry already sets LR_mon to the instruction after SMC
++     * (PC + 4 for the original ARM tzdrv). Do not advance it a second time.
++     * The monitor uses banked SP/LR, preserves r1..r12 and returns via SPSR.
++     * This is an explicit compatibility diagnostic, not Samsung's secure OS.
++     */
++    arm_write_bootloader("mst12-experimental-monitor",
++                         arm_boot_address_space(cpu, info),
++                         MST_MONITOR_VECTORS, monitor, NULL);
++}
++
++/*
++ * Firmware IRQs 128..255 use eight 16-bit MStar interrupt banks. The
++ * GIC EOI routine acknowledges these through PPI 31, not an external SPI.
++ */
++static const hwaddr mst_irq_mask[8] = {
++    0x203290, 0x203294, 0x203298, 0x20329c,
++    0x2032d0, 0x2032d4, 0x2032d8, 0x2032dc,
++};
++
++static const hwaddr mst_irq_pending[8] = {
++    0x2032b0, 0x2032b4, 0x2032b8, 0x2032bc,
++    0x2032f0, 0x2032f4, 0x2032f8, 0x2032fc,
++};
++
++static uint16_t mst_pending(SamsungMStarState *s, unsigned bank)
++{
++    hwaddr offset = mst_irq_mask[bank];
++    uint16_t mask = s->registers[offset] |
++                    (s->registers[offset + 1] << 8);
++
++    return s->interrupt_level[bank] & ~mask;
++}
++
++static void mst_update_interrupts(SamsungMStarState *s)
++{
++    unsigned bank;
++    bool pending = false;
++
++    for (bank = 0; bank < 8; bank++) {
++        pending |= mst_pending(s, bank) != 0;
++    }
++    qemu_set_irq(s->cascade, pending);
++}
++
++static void mst_external_irq(void *opaque, int source, int level)
++{
++    SamsungMStarState *s = opaque;
++    unsigned bank = source / 16;
++    uint16_t bit = 1u << (source % 16);
++
++    if (level) {
++        s->interrupt_level[bank] |= bit;
++    } else {
++        s->interrupt_level[bank] &= ~bit;
++    }
++    mst_update_interrupts(s);
++}
++
++static uint64_t mst_register_read(void *opaque, hwaddr offset, unsigned size)
++{
++    SamsungMStarState *s = opaque;
++    uint64_t value = 0;
++    unsigned i;
++
++    for (i = 0; i < 8; i++) {
++        if (offset == mst_irq_pending[i]) {
++            return mst_pending(s, i);
++        }
++    }
++    for (i = 0; i < size; i++) {
++        uint8_t byte = s->registers[offset + i];
++
++        if (offset + i == MST_PANEL_GPIO_IN) {
++            bool high = s->registers[MST_PANEL_GPIO_OEN] & MST_PANEL_GPIO_MASK ?
++                        s->panel_gpio43_high :
++                        !!(s->registers[MST_PANEL_GPIO_OUT] &
++                           MST_PANEL_GPIO_MASK);
++
++            byte = (byte & ~MST_PANEL_GPIO_MASK) |
++                   (high ? MST_PANEL_GPIO_MASK : 0);
++        } else if (offset + i == MST_PANEL_FHD_GPIO) {
++            bool high = byte & MST_PANEL_FHD_OEN ? s->panel_gpio10_high :
++                        !!(byte & MST_PANEL_FHD_OUT);
++
++            byte = (byte & ~MST_PANEL_FHD_IN) |
++                   (high ? MST_PANEL_FHD_IN : 0);
++        }
++        value |= (uint64_t)byte << (i * 8);
++    }
++    if (offset != MST_CLOCK_MULT_OFFSET && s->unimplemented_budget) {
++        qemu_log_mask(LOG_UNIMP,
++                      "MST12 stub read: phys=0x%" HWADDR_PRIx
++                      " size=%u value=0x%" PRIx64 "\n",
++                      MST_RIU_BASE + offset, size, value);
++        s->unimplemented_budget--;
++    }
++    return value;
++}
++
++static void mst_register_write(void *opaque, hwaddr offset, uint64_t value,
++                               unsigned size)
++{
++    SamsungMStarState *s = opaque;
++    uint8_t calibration = s->registers[offset] & 2;
++    unsigned i;
++
++    for (i = 0; i < size; i++) {
++        uint8_t byte = value >> (i * 8);
++
++        if (offset + i == MST_PANEL_GPIO_IN) {
++            byte = (byte & ~MST_PANEL_GPIO_MASK) |
++                   (s->registers[offset + i] & MST_PANEL_GPIO_MASK);
++        } else if (offset + i == MST_PANEL_FHD_GPIO) {
++            byte = (byte & ~MST_PANEL_FHD_IN) |
++                   (s->registers[offset + i] & MST_PANEL_FHD_IN);
++        }
++        s->registers[offset + i] = byte;
++    }
++    /*
++     * Titania3_series_start_ehc() in the original ehci-hcd.ko toggles
++     * UTMI calibration bit 0, then waits indefinitely for status bit 1.
++     * usb_ehci_mstar_probe() supplies these three PHY bases. Acknowledge
++     * calibration synchronously; the EHCI adapters handle USB transactions.
++     */
++    if (offset == MST_USB1_CAL_OFFSET || offset == MST_USB2_CAL_OFFSET ||
++        offset == MST_USB3_CAL_OFFSET) {
++        if (value & 1) {
++            calibration = 2;
++        }
++        s->registers[offset] = (value & ~2) | calibration;
++    }
++    /*
++     * Chip_Flush_Memory() and the outer-cache sync callback toggle bit 0
++     * here, then poll status bit 12. QEMU's memory writes are synchronous,
++     * so the modeled MIU pipeline is drained as soon as the request arrives.
++     */
++    if (offset == MST_MIU_FLUSH_OFFSET) {
++        s->registers[MST_MIU_STATUS_OFFSET + 1] &= ~0x10;
++        if (value & 1) {
++            s->registers[MST_MIU_STATUS_OFFSET + 1] |= 0x10;
++        }
++    }
++    mst_update_interrupts(s);
++    if (s->unimplemented_budget) {
++        qemu_log_mask(LOG_UNIMP,
++                      "MST12 stub write: phys=0x%" HWADDR_PRIx
++                      " size=%u value=0x%" PRIx64 "\n",
++                      MST_RIU_BASE + offset, size, value);
++        s->unimplemented_budget--;
++    }
++}
++
++static const MemoryRegionOps mst_register_ops = {
++    .read = mst_register_read,
++    .write = mst_register_write,
++    .endianness = DEVICE_LITTLE_ENDIAN,
++    .valid = {
++        .min_access_size = 1,
++        .max_access_size = 4,
++    },
++    .impl = {
++        .min_access_size = 1,
++        .max_access_size = 4,
++    },
++};
++
++static void mst_register_reset(void *opaque)
++{
++    SamsungMStarState *s = opaque;
++    unsigned bank;
++
++    memset(s->registers, 0, MST_RIU_SIZE);
++    memset(s->interrupt_level, 0, sizeof(s->interrupt_level));
++    /*
++     * ShareBase::GetPanelTypeByHW reads GPIO43: high selects LCD, low PDP.
++     * PreInit.ko's original GPIO table supplies these PM RIU bytes/masks.
++     * UE40F6650 is an LCD model. The input release and external high are
++     * explicit board choices, not measured pad reset values or voltages.
++     */
++    s->registers[MST_PANEL_GPIO_OEN] = MST_PANEL_GPIO_MASK;
++    /*
++     * TDsPrimePanel::CheckGpioForPanelData reads GPIO10 for platform bit 1.
++     * A high input sets PrimePictureShare::m_bPanelResolution to zero, which
++     * TDaPanel::GetPanelConfigType returns as 1920x1080. The supplied firmware
++     * has that platform bit set. PreInit.ko identifies the shared OEN/OUT/IN
++     * byte. A released, externally high pad models the owner's Full HD panel;
++     * its physical pull and voltage have not been measured.
++     */
++    s->registers[MST_PANEL_FHD_GPIO] = MST_PANEL_FHD_OEN;
++    for (bank = 0; bank < 8; bank++) {
++        s->registers[mst_irq_mask[bank]] = 0xff;
++        s->registers[mst_irq_mask[bank] + 1] = 0xff;
++    }
++    mst_update_interrupts(s);
++    /*
++     * query_frequency(): register * 12 MHz. 900 MHz is a bring-up value.
++     * The stock A9 timer models use 100 MHz, so timing is provisional.
++     */
++    s->registers[MST_CLOCK_MULT_OFFSET] = 75;
++    s->unimplemented_budget = 128;
++}
++
++static void mst_write_secondary_boot(ARMCPU *cpu,
++                                     const struct arm_boot_info *info)
++{
++    /*
++     * The original smp_prepare_cpus() at kernel VA 0xc000d9b0 writes the
++     * secondary entry high half to 0x1f206740, then low to 0x1f206744.
++     * Its low half is nonzero (0xdd6c). boot_secondary() at 0xc001f6a0
++     * sends SGI 1 after setting pen_release. Wait for the final mailbox
++     * write and acknowledge that wakeup before entering the original code.
++     * This small loader replaces only the unrecovered bootloader wait.
++     */
++    static const ARMInsnFixup secondary[] = {
++        { 0xe59f0048 }, /* ldr r0, high mailbox address */
++        { 0xe59f1048 }, /* ldr r1, low mailbox address */
++        { 0xe59f4048 }, /* ldr r4, GIC CPU interface */
++        { 0xe3a05001 }, /* mov r5, #1 */
++        { 0xe5845000 }, /* str r5, [r4] ; enable interface */
++        { 0xe3a050ff }, /* mov r5, #255 */
++        { 0xe5845004 }, /* str r5, [r4, #4] ; priority mask */
++        { 0xe1d130b0 }, /* loop: ldrh r3, [r1] */
++        { 0xe3530000 }, /* cmp r3, #0 */
++        { 0x0afffffc }, /* beq loop */
++        { 0xe594500c }, /* ldr r5, [r4, #12] ; acknowledge IRQ */
++        { 0xe7e96055 }, /* ubfx r6, r5, #0, #10 ; IRQ number */
++        { 0xe3560fff }, /* cmp r6, #1020 ; special IRQ numbers */
++        { 0x2afffff8 }, /* bhs loop */
++        { 0xe5845010 }, /* str r5, [r4, #16] ; EOI */
++        { 0xe3560001 }, /* cmp r6, #1 ; secondary wakeup */
++        { 0x1afffff5 }, /* bne loop */
++        { 0xe1d020b0 }, /* ldrh r2, [r0] */
++        { 0xe1832802 }, /* orr r2, r3, r2, lsl #16 */
++        { 0xe12fff12 }, /* bx r2 */
++        { 0x1f206740 },
++        { 0x1f206744 },
++        { 0x16000100 },
++        { 0, FIXUP_TERMINATOR }
++    };
++
++    arm_write_bootloader("mst12-secondary-loader",
++                         arm_boot_address_space(cpu, info),
++                         info->smp_loader_start, secondary, NULL);
++}
++
++static void mst_reset_secondary(ARMCPU *cpu,
++                                const struct arm_boot_info *info)
++{
++    cpu_set_pc(CPU(cpu), info->smp_loader_start);
++}
++
++static void samsung_mstar_init(MachineState *machine)
++{
++    SamsungMStarState *s = SAMSUNG_MSTAR_MACHINE(machine);
++    MemoryRegion *system_memory = get_system_memory();
++    DeviceState *mpcore;
++    DeviceState *fcie;
++    DeviceState *ge;
++    DeviceState *gop;
++    DeviceState *mali;
++    DeviceState *mload;
++    DeviceState *pq_sram;
++    DeviceState *mvd;
++    DeviceState *tsp;
++    DeviceState *efuse;
++    DeviceState *miu_pll;
++    DeviceState *pcmcia;
++    DeviceState *emac;
++    DeviceState *gpio_i2c;
++    I2CSlave *eeprom;
++    I2CBus *i2c_bus;
++    g_autofree char *factory_mac = NULL;
++    Chardev *uart1 = serial_hd(1);
++    static const hwaddr ehci_offset[] = {
++        MST_EHCI1_OFFSET, MST_EHCI2_OFFSET, MST_EHCI3_OFFSET,
++    };
++    static const unsigned ehci_irq[] = {199, 226, 229};
++    DriveInfo *drive;
++    SysBusDevice *mpcore_bus;
++    ARMCPU *boot_cpu = NULL;
++    unsigned i;
++
++    if (machine->ram_size < 64 * MiB || machine->ram_size > 512 * MiB) {
++        error_report("MST12 bring-up supports 64 to 512 MiB of guest RAM");
++        exit(EXIT_FAILURE);
++    }
++
++    for (i = 0; i < machine->smp.cpus; i++) {
++        Object *cpu_object = object_new(machine->cpu_type);
++        ARMCPU *cpu = ARM_CPU(cpu_object);
++
++        /* Direct Linux bring-up with an optional experimental monitor. */
++        object_property_set_bool(cpu_object, "has_el3",
++                                 s->secure_monitor != MST_MONITOR_OFF,
++                                 &error_fatal);
++        object_property_set_int(cpu_object, "reset-cbar", MST_PRIVATE_BASE,
++                                &error_fatal);
++        qdev_realize(DEVICE(cpu), NULL, &error_fatal);
++        if (i == 0) {
++            boot_cpu = cpu;
++        }
++    }
++
++    /*
++     * Keep the first bank clear of the original graphics reservations.
++     * Larger configurations use the kernel's verified LX_MEM2 ABI:
++     * LX_MEM2=0x60000000,<hexadecimal size>. Its placement is an emulator
++     * choice, not a measurement of the TV's physical DRAM layout.
++     * Both aliases belong to the standard machine RAM allocation.
++     */
++    memory_region_init_alias(&s->kernel_ram, OBJECT(machine),
++                             "mst12.linux-bank1", machine->ram, 0,
++                             MIN(machine->ram_size, MST_KERNEL_RAM_LIMIT));
++    memory_region_add_subregion(system_memory, MST_KERNEL_RAM_BASE,
++                                &s->kernel_ram);
++    if (machine->ram_size > MST_KERNEL_RAM_LIMIT) {
++        memory_region_init_alias(&s->kernel_ram2, OBJECT(machine),
++                                 "mst12.linux-bank2", machine->ram,
++                                 MST_KERNEL_RAM_LIMIT,
++                                 machine->ram_size - MST_KERNEL_RAM_LIMIT);
++        memory_region_add_subregion(system_memory, MST_KERNEL_RAM2_BASE,
++                                    &s->kernel_ram2);
++    }
++    /*
++     * Direct boot must supply EMAC_MEM=0x50e00000,0x100000. The original
++     * get_boot_mem_info(1) rounds its size down to MiB; mdrv-emac.ko needs
++     * reserved DMA storage before assigning net_device->netdev_ops.
++     * Placement and capacity are emulator choices outside Linux/vendor RAM.
++     */
++    memory_region_init_ram(&s->emac_ram, NULL, "mst12.emac-dma",
++                          MST_EMAC_RAM_SIZE, &error_fatal);
++    memory_region_add_subregion(system_memory, MST_EMAC_RAM_BASE,
++                                &s->emac_ram);
++    /*
++     * Original exeDSP's PreAppInitializ thread requests GOP_0 at
++     * MIU-relative address 0x65800000, size 4 MiB. mstar_fb_ioctl adds
++     * 0x40000000 and ioremaps CPU address 0xa5800000. Its allocator
++     * stores metadata in this reserved MIU1 bank.
++     */
++    /*
++     * GOP_1 requests 140 MiB at MIU-relative 0x13904000. This bank also
++     * contains the original default fb0 buffers at CPU 0x5a207000,
++     * length 0x697800 (two 800x1080 ARGB8888 images). One RAM region
++     * preserves coherent storage for overlapping allocations/mappings.
++     */
++    /* Remaining ranges come from original exeTV's /dev/malloc VMA dump. */
++    for (i = 0; i < MST_VENDOR_BANKS; i++) {
++        static const struct {
++            hwaddr base;
++            ram_addr_t size;
++            const char *name;
++        } banks[MST_VENDOR_BANKS] = {
++            { MST_VENDOR_GOP_BASE, MST_VENDOR_GOP_SIZE, "mst12.vendor-gop0" },
++            { MST_VENDOR_GOP1_BASE, MST_VENDOR_GOP1_SIZE, "mst12.vendor-gop1" },
++            { 0x53000000, 0x8e4000, "mst12.vendor-miu0-head" },
++            { 0x5c504000, 0x1495000, "mst12.vendor-miu0-tail" },
++            { 0xa0000000, 0x5702000, "mst12.vendor-miu1-head" },
++            { 0xa5c00000, 2 * MiB, "mst12.vendor-miu1-tail" },
++        };
++
++        memory_region_init_ram(&s->vendor_ram[i], NULL, banks[i].name,
++                              banks[i].size, &error_fatal);
++        memory_region_add_subregion(system_memory, banks[i].base,
++                                    &s->vendor_ram[i]);
++    }
++    if (machine->smp.cpus > 1 || s->secure_monitor != MST_MONITOR_OFF) {
++        /* Emulator loader RAM in the gap below the diagnostic Linux bank. */
++        memory_region_init_ram(&s->boot_ram, NULL, "mst12.boot-ram",
++                              MST_BOOT_RAM_SIZE, &error_fatal);
++        memory_region_add_subregion(system_memory, MST_BOOT_RAM_BASE,
++                                    &s->boot_ram);
++    }
++    if (s->secure_monitor != MST_MONITOR_OFF) {
++        memory_region_init_io(&s->monitor_io, OBJECT(machine), &mst_monitor_ops,
++                              s, "mst12.monitor-mailbox", 16);
++        memory_region_add_subregion_overlap(system_memory, MST_MONITOR_IO,
++                                            &s->monitor_io, 1);
++    }
++    if (s->secure_monitor == MST_MONITOR_BOOTSTRAP) {
++        /* Provisional WSM/log pages outside Linux RAM and vendor mappings. */
++        memory_region_init_ram(&s->monitor_wsm, NULL, "mst12.monitor-wsm",
++                              MST_MONITOR_RAM_SIZE, &error_fatal);
++        memory_region_add_subregion(system_memory, MST_MONITOR_WSM_BASE,
++                                    &s->monitor_wsm);
++    }
++    /*
++     * kdtvlogd maps a 256 KiB buffer at 0x5da80000 and a 16-byte control
++     * record at 0x5dac0000. These bootloader-reserved pages must remain
++     * accessible even with only 256 MiB assigned to the Linux memory bank.
++     */
++    memory_region_init_ram(&s->dtvlog_ram, NULL, "mst12.dtvlog-ram",
++                          MST_DTVLOG_SIZE, &error_fatal);
++    memory_region_add_subregion_overlap(system_memory, MST_DTVLOG_BASE,
++                                       &s->dtvlog_ram, 1);
++    /* Provisional graphics pool outside the diagnostic Linux RAM bank. */
++    memory_region_init_ram(&s->framebuffer_ram, NULL, "mst12.framebuffer-ram",
++                          MST_FRAMEBUFFER_SIZE, &error_fatal);
++    memory_region_add_subregion(system_memory, MST_FRAMEBUFFER_BASE,
++                                &s->framebuffer_ram);
++
++    mpcore = qdev_new(TYPE_A9MPCORE_PRIV);
++    qdev_prop_set_uint32(mpcore, "num-cpu", machine->smp.cpus);
++    qdev_prop_set_uint32(mpcore, "num-irq", MST_GIC_IRQS);
++    /* Match the unchanged kernel's rate for our configured 900 MHz CPU PLL. */
++    s->peripheral_clock = clock_new(OBJECT(machine), "peripheral-clock");
++    clock_set_hz(s->peripheral_clock, MST_PERIPHERAL_CLOCK_HZ);
++    qdev_connect_clock_in(DEVICE(&A9MPCORE_PRIV(mpcore)->gtimer), "clk",
++                          s->peripheral_clock);
++    qdev_connect_clock_in(DEVICE(&A9MPCORE_PRIV(mpcore)->mptimer), "clk",
++                          s->peripheral_clock);
++    qdev_connect_clock_in(DEVICE(&A9MPCORE_PRIV(mpcore)->wdt), "clk",
++                          s->peripheral_clock);
++    mpcore_bus = SYS_BUS_DEVICE(mpcore);
++    sysbus_realize_and_unref(mpcore_bus, &error_fatal);
++    sysbus_mmio_map(mpcore_bus, 0, MST_PRIVATE_BASE);
++    for (i = 0; i < machine->smp.cpus; i++) {
++        DeviceState *cpu = DEVICE(qemu_get_cpu(i));
++
++        sysbus_connect_irq(mpcore_bus, i,
++                           qdev_get_gpio_in(cpu, ARM_CPU_IRQ));
++        sysbus_connect_irq(mpcore_bus, i + machine->smp.cpus,
++                           qdev_get_gpio_in(cpu, ARM_CPU_FIQ));
++    }
++    sysbus_create_simple("l2x0", MST_L2_BASE, NULL);
++
++    s->cascade = qdev_get_gpio_in(DEVICE(&A9MPCORE_PRIV(mpcore)->gic),
++                                 MST_GIC_IRQS - 32 + 31);
++
++    s->registers = g_malloc0(MST_RIU_SIZE);
++    memory_region_init(&s->riu, OBJECT(machine), "mst12.riu", MST_RIU_SIZE);
++    memory_region_init_io(&s->register_bank, OBJECT(machine), &mst_register_ops,
++                         s, "mst12.bringup-registers", MST_RIU_SIZE);
++    memory_region_add_subregion_overlap(&s->riu, 0, &s->register_bank, -1);
++    memory_region_add_subregion(system_memory, MST_RIU_BASE, &s->riu);
++    mst_register_reset(s);
++    qemu_register_reset(mst_register_reset, s);
++
++    /* mdrv-emac.ko: RIU MAC 0xfd204000, PHY 0xfd245000, IRQ 201. */
++    emac = qdev_new(TYPE_MST12_EMAC);
++    object_property_add_child(OBJECT(machine), "emac", OBJECT(emac));
++    qemu_configure_nic_device(emac, true, "mst12-emac");
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(emac), &error_fatal);
++    memory_region_add_subregion(&s->riu, 0x204000,
++                               sysbus_mmio_get_region(SYS_BUS_DEVICE(emac), 0));
++    memory_region_add_subregion(&s->riu, 0x245000,
++                               sysbus_mmio_get_region(SYS_BUS_DEVICE(emac), 1));
++    sysbus_connect_irq(SYS_BUS_DEVICE(emac), 0,
++                       qemu_allocate_irq(mst_external_irq, s, 201 - 128));
++
++    /*
++     * PreInit.ko dispatches logical buses 0/1/2 to hardware ports 3/1/0.
++     * Its GPIO66/67 records describe bus 2's pins, not a software transfer.
++     * exeTV reads its factory MAC at EEPROM 0x1e04 and programs the MAC.
++     * There is no factory dump: seed only the configured synthetic NIC MAC,
++     * and let all guest IIC reads/writes and Ethernet register writes run.
++     */
++    gpio_i2c = qdev_new(TYPE_MST12_GPIO_I2C);
++    object_property_add_child(OBJECT(machine), "iic2", OBJECT(gpio_i2c));
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio_i2c), &error_fatal);
++    memory_region_add_subregion(&s->riu, MST_IIC2_OFFSET,
++                                sysbus_mmio_get_region(
++                                    SYS_BUS_DEVICE(gpio_i2c), 0));
++    i2c_bus = I2C_BUS(qdev_get_child_bus(gpio_i2c, "iic2"));
++    eeprom = i2c_slave_new(TYPE_MST12_FACTORY_EEPROM, 0x50);
++    object_property_add_child(OBJECT(machine), "factory-eeprom",
++                              OBJECT(eeprom));
++    factory_mac = object_property_get_str(OBJECT(emac), "mac", &error_fatal);
++    qdev_prop_set_string(DEVICE(eeprom), "initial-mac", factory_mac);
++    i2c_slave_realize_and_unref(eeprom, i2c_bus, &error_fatal);
++
++    for (i = 0; i < 4; i++) {
++        static const int hwiic_irq[] = {254, 252, -1, 204};
++        DeviceState *hwiic = qdev_new(TYPE_MST12_HWIIC);
++        g_autofree char *name = g_strdup_printf("hwiic%u", i);
++
++        object_property_add_child(OBJECT(machine), name, OBJECT(hwiic));
++        qdev_prop_set_uint32(hwiic, "port", i);
++        if (i == 0) {
++            object_property_set_link(OBJECT(hwiic), "bus", OBJECT(i2c_bus),
++                                     &error_fatal);
++        }
++        sysbus_realize_and_unref(SYS_BUS_DEVICE(hwiic), &error_fatal);
++        if (i == 1) {
++            I2CSlave *tuner = i2c_slave_new(TYPE_MST12_SI2176, 0x60);
++            I2CBus *tuner_bus = I2C_BUS(qdev_get_child_bus(hwiic, "i2c"));
++
++            object_property_add_child(OBJECT(machine), "tuner", OBJECT(tuner));
++            i2c_slave_realize_and_unref(tuner, tuner_bus, &error_fatal);
++        }
++        memory_region_add_subregion(&s->riu, 0x223000 + i * 0x200,
++                                    sysbus_mmio_get_region(
++                                        SYS_BUS_DEVICE(hwiic), 0));
++        if (hwiic_irq[i] >= 0) {
++            sysbus_connect_irq(SYS_BUS_DEVICE(hwiic), 0,
++                               qemu_allocate_irq(mst_external_irq, s,
++                                                 hwiic_irq[i] - 128));
++        }
++    }
++
++    mvd = qdev_new(TYPE_MST12_MVD);
++    object_property_add_child(OBJECT(machine), "mvd", OBJECT(mvd));
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(mvd), &error_fatal);
++    memory_region_add_subregion(&s->riu, 0x202200,
++                                sysbus_mmio_get_region(SYS_BUS_DEVICE(mvd), 0));
++
++    efuse = qdev_new(TYPE_MST12_EFUSE);
++    object_property_add_child(OBJECT(machine), "efuse", OBJECT(efuse));
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(efuse), &error_fatal);
++    memory_region_add_subregion(&s->riu, MST_EFUSE_OFFSET,
++                                sysbus_mmio_get_region(
++                                    SYS_BUS_DEVICE(efuse), 0));
++
++    miu_pll = qdev_new(TYPE_MST12_MIU_PLL);
++    object_property_add_child(OBJECT(machine), "miu-pll", OBJECT(miu_pll));
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(miu_pll), &error_fatal);
++    memory_region_add_subregion(&s->riu, MST_MIU_PLL_OFFSET,
++                                sysbus_mmio_get_region(
++                                    SYS_BUS_DEVICE(miu_pll), 0));
++
++    pcmcia = qdev_new(TYPE_MST12_PCMCIA);
++    object_property_add_child(OBJECT(machine), "pcmcia", OBJECT(pcmcia));
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(pcmcia), &error_fatal);
++    memory_region_add_subregion(&s->riu, 0x206880,
++                                sysbus_mmio_get_region(
++                                    SYS_BUS_DEVICE(pcmcia), 0));
++
++    mload = qdev_new(TYPE_MST12_MLOAD);
++    object_property_add_child(OBJECT(machine), "mload", OBJECT(mload));
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(mload), &error_fatal);
++    memory_region_add_subregion(&s->riu, MST_MLOAD_OFFSET,
++                                sysbus_mmio_get_region(
++                                    SYS_BUS_DEVICE(mload), 0));
++
++    pq_sram = qdev_new(TYPE_MST12_PQ_SRAM);
++    object_property_add_child(OBJECT(machine), "pq-sram", OBJECT(pq_sram));
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(pq_sram), &error_fatal);
++    memory_region_add_subregion(&s->riu, MST_PQ_SRAM_OFFSET,
++                                sysbus_mmio_get_region(
++                                    SYS_BUS_DEVICE(pq_sram), 0));
++
++    tsp = qdev_new(TYPE_MST12_TSP);
++    object_property_add_child(OBJECT(machine), "tsp", OBJECT(tsp));
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(tsp), &error_fatal);
++    memory_region_add_subregion(&s->riu, MST_TSP_OFFSET,
++                                sysbus_mmio_get_region(SYS_BUS_DEVICE(tsp), 0));
++
++    ge = qdev_new(TYPE_MST12_GE);
++    object_property_add_child(OBJECT(machine), "ge", OBJECT(ge));
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(ge), &error_fatal);
++    memory_region_add_subregion(&s->riu, 0x205000,
++                                 sysbus_mmio_get_region(SYS_BUS_DEVICE(ge), 0));
++
++    gop = qdev_new(TYPE_MST12_GOP);
++    object_property_add_child(OBJECT(machine), "gop", OBJECT(gop));
++    qdev_prop_set_uint32(gop, "panel-width",
++                         s->native_scanout ? 0 : MST_PANEL_WIDTH);
++    qdev_prop_set_uint32(gop, "panel-height",
++                         s->native_scanout ? 0 : MST_PANEL_HEIGHT);
++    qdev_prop_set_bit(gop, "panel-rotate-180", s->panel_rotate_180);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(gop), &error_fatal);
++    memory_region_add_subregion(&s->riu, MST_GOP_OFFSET,
++                                sysbus_mmio_get_region(SYS_BUS_DEVICE(gop), 0));
++    memory_region_add_subregion(&s->riu, MST_GOP_DIRECT_OFFSET,
++                                sysbus_mmio_get_region(SYS_BUS_DEVICE(gop), 1));
++
++    /*
++     * The original module's resource table contains GP, four PPs, five MMUs
++     * and one L2 cache. Revision/cache-size properties remain provisional.
++     */
++    mali = qdev_new(TYPE_MST12_MALI);
++    object_property_add_child(OBJECT(machine), "mali", OBJECT(mali));
++    qdev_prop_set_uint32(mali, "pp-count", 4);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(mali), &error_fatal);
++    memory_region_add_subregion(&s->riu, MST_MALI_OFFSET,
++                                sysbus_mmio_get_region(SYS_BUS_DEVICE(mali),
++                                                       0));
++    sysbus_connect_irq(SYS_BUS_DEVICE(mali), 0,
++                       qemu_allocate_irq(mst_external_irq, s, 245 - 128));
++
++    for (i = 0; i < ARRAY_SIZE(ehci_offset); i++) {
++        DeviceState *ehci = qdev_new(TYPE_MST12_EHCI);
++        g_autofree char *name = g_strdup_printf("ehci%u", i + 1);
++
++        object_property_add_child(OBJECT(machine), name, OBJECT(ehci));
++        sysbus_realize_and_unref(SYS_BUS_DEVICE(ehci), &error_fatal);
++        memory_region_add_subregion(&s->riu, ehci_offset[i],
++                                    sysbus_mmio_get_region(SYS_BUS_DEVICE(ehci),
++                                                           0));
++        sysbus_connect_irq(SYS_BUS_DEVICE(ehci), 0,
++                           qemu_allocate_irq(mst_external_irq, s,
++                                              ehci_irq[i] - 128));
++    }
++
++    /*
++     * The vendor callbacks perform 32-bit accesses at index * 4, using
++     * doubled 8250 indices (IER=2, LCR=6, LSR=10). Thus adjacent 16550
++     * registers are eight bytes apart: use regshift=3 in serial-mm.
++     * register_port() supplies IRQs 192, 231, 242, 232. Model their level
++     * inputs to the MStar banks. register_port() sets uartclk to 123 MHz,
++     * except for PIU UART1 at 108 MHz. serial-mm takes clock / 16.
++     */
++    serial_mm_init(&s->riu, MST_UART0_OFFSET, 3,
++                   qemu_allocate_irq(mst_external_irq, s, 192 - 128),
++                   MST_UART_BAUD_BASE,
++                   serial_hd(0), DEVICE_LITTLE_ENDIAN);
++    if (s->micom_enabled) {
++        DeviceState *micom = qdev_new(TYPE_MST12_MICOM);
++
++        object_property_add_child(OBJECT(machine), "micom", OBJECT(micom));
++        if (uart1) {
++            qdev_prop_set_chr(micom, "tx-monitor", uart1);
++        }
++        sysbus_realize_and_unref(SYS_BUS_DEVICE(micom), &error_fatal);
++        uart1 = mst12_micom_chardev(micom);
++    }
++    serial_mm_init(&s->riu, MST_UART1_OFFSET, 3,
++                   qemu_allocate_irq(mst_external_irq, s, 231 - 128),
++                   MST_PIU_UART_BAUD_BASE,
++                   uart1, DEVICE_LITTLE_ENDIAN);
++    serial_mm_init(&s->riu, 0x220d00, 3,
++                   qemu_allocate_irq(mst_external_irq, s, 242 - 128),
++                   MST_UART_BAUD_BASE,
++                   serial_hd(2), DEVICE_LITTLE_ENDIAN);
++    serial_mm_init(&s->riu, 0x220c80, 3,
++                   qemu_allocate_irq(mst_external_irq, s, 232 - 128),
++                   MST_UART_BAUD_BASE,
++                   serial_hd(3), DEVICE_LITTLE_ENDIAN);
++
++    fcie = qdev_new(TYPE_MST12_FCIE);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(fcie), &error_fatal);
++    memory_region_add_subregion(&s->riu, MST_FCIE_OFFSET,
++                                sysbus_mmio_get_region(
++                                    SYS_BUS_DEVICE(fcie), 0));
++    sysbus_connect_irq(SYS_BUS_DEVICE(fcie), 0,
++                       qemu_allocate_irq(mst_external_irq, s, 197 - 128));
++    drive = drive_get(IF_SD, 0, 0);
++    if (drive) {
++        DeviceState *card = qdev_new(TYPE_EMMC);
++
++        qdev_prop_set_drive_err(card, "drive", blk_by_legacy_dinfo(drive),
++                               &error_fatal);
++        qdev_realize_and_unref(card, qdev_get_child_bus(fcie, "sd-bus"),
++                               &error_fatal);
++    }
++
++    /* The loader/ATAG bank is contiguous; LX_MEM2 registers the second. */
++    s->boot_info.ram_size = MIN(machine->ram_size, MST_KERNEL_RAM_LIMIT);
++    s->boot_info.board_id = 3173;
++    s->boot_info.loader_start = MST_KERNEL_RAM_BASE;
++    s->boot_info.gic_cpu_if_addr = MST_PRIVATE_BASE + 0x100;
++    s->boot_info.smp_loader_start = MST_SECONDARY_BOOT;
++    s->boot_info.write_secondary_boot = mst_write_secondary_boot;
++    s->boot_info.secondary_cpu_reset_hook = mst_reset_secondary;
++    if (s->secure_monitor != MST_MONITOR_OFF) {
++        mst_write_monitor(boot_cpu, &s->boot_info);
++    }
++    arm_load_kernel(boot_cpu, machine, &s->boot_info);
++    if (s->secure_monitor != MST_MONITOR_OFF) {
++        qemu_register_reset(mst_monitor_reset, s);
++    }
++}
++
++static char *mst_get_secure_monitor(Object *obj, Error **errp)
++{
++    SamsungMStarState *s = SAMSUNG_MSTAR_MACHINE(obj);
++
++    switch (s->secure_monitor) {
++    case MST_MONITOR_BOOTSTRAP:
++        return g_strdup("bootstrap");
++    case MST_MONITOR_ZERO:
++        return g_strdup("zero");
++    default:
++        return g_strdup("off");
++    }
++}
++
++static void mst_set_secure_monitor(Object *obj, const char *value, Error **errp)
++{
++    SamsungMStarState *s = SAMSUNG_MSTAR_MACHINE(obj);
++
++    if (!strcmp(value, "off")) {
++        s->secure_monitor = MST_MONITOR_OFF;
++    } else if (!strcmp(value, "zero")) {
++        s->secure_monitor = MST_MONITOR_ZERO;
++    } else if (!strcmp(value, "bootstrap")) {
++        s->secure_monitor = MST_MONITOR_BOOTSTRAP;
++    } else {
++        error_setg(errp, "MST12 secure-monitor must be 'off', 'zero' "
++                   "or 'bootstrap'");
++    }
++}
++
++static bool mst_get_native_scanout(Object *obj, Error **errp)
++{
++    return SAMSUNG_MSTAR_MACHINE(obj)->native_scanout;
++}
++
++static void mst_set_native_scanout(Object *obj, bool value, Error **errp)
++{
++    SAMSUNG_MSTAR_MACHINE(obj)->native_scanout = value;
++}
++
++static bool mst_get_panel_rotation(Object *obj, Error **errp)
++{
++    return SAMSUNG_MSTAR_MACHINE(obj)->panel_rotate_180;
++}
++
++static void mst_set_panel_rotation(Object *obj, bool value, Error **errp)
++{
++    SAMSUNG_MSTAR_MACHINE(obj)->panel_rotate_180 = value;
++}
++
++static bool mst_get_micom(Object *obj, Error **errp)
++{
++    return SAMSUNG_MSTAR_MACHINE(obj)->micom_enabled;
++}
++
++static void mst_set_micom(Object *obj, bool value, Error **errp)
++{
++    SAMSUNG_MSTAR_MACHINE(obj)->micom_enabled = value;
++}
++
++static bool mst_get_panel_gpio43(Object *obj, Error **errp)
++{
++    return SAMSUNG_MSTAR_MACHINE(obj)->panel_gpio43_high;
++}
++
++static void mst_set_panel_gpio43(Object *obj, bool value, Error **errp)
++{
++    SAMSUNG_MSTAR_MACHINE(obj)->panel_gpio43_high = value;
++}
++
++static bool mst_get_panel_gpio10(Object *obj, Error **errp)
++{
++    return SAMSUNG_MSTAR_MACHINE(obj)->panel_gpio10_high;
++}
++
++static void mst_set_panel_gpio10(Object *obj, bool value, Error **errp)
++{
++    SAMSUNG_MSTAR_MACHINE(obj)->panel_gpio10_high = value;
++}
++
++static void samsung_mstar_instance_init(Object *obj)
++{
++    SAMSUNG_MSTAR_MACHINE(obj)->panel_gpio43_high = true;
++    SAMSUNG_MSTAR_MACHINE(obj)->panel_gpio10_high = true;
++}
++
++static void samsung_mstar_class_init(ObjectClass *object_class,
++                                     const void *data)
++{
++    MachineClass *mc = MACHINE_CLASS(object_class);
++    static const char * const cpu_types[] = {
++        ARM_CPU_TYPE_NAME("cortex-a9"), NULL,
++    };
++
++    mc->desc = "Samsung UE40F6650 / MStar Edison experimental kernel bring-up";
++    mc->init = samsung_mstar_init;
++    mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-a9");
++    mc->valid_cpu_types = cpu_types;
++    /* Owner-reported model capacity; physical bank layout is unverified. */
++    mc->default_ram_size = 512 * MiB;
++    mc->default_ram_id = "mst12.ram";
++    mc->min_cpus = 1;
++    mc->max_cpus = 2;
++    mc->default_cpus = 1;
++    mc->no_cdrom = true;
++    object_class_property_add_bool(object_class, "panel-rotate-180",
++                                   mst_get_panel_rotation,
++                                   mst_set_panel_rotation);
++    object_class_property_set_description(object_class, "panel-rotate-180",
++                                          "Panel mounting orientation: "
++                                          "rotate final scanout 180 degrees "
++                                          "(default off; board unmeasured)");
++    object_class_property_add_bool(object_class, "panel-gpio43-high",
++                                   mst_get_panel_gpio43, mst_set_panel_gpio43);
++    object_class_property_set_description(object_class, "panel-gpio43-high",
++                                          "External GPIO43 panel strap: "
++                                          "high selects LCD (default), "
++                                          "low selects PDP");
++    object_class_property_add_bool(object_class, "panel-gpio10-high",
++                                   mst_get_panel_gpio10, mst_set_panel_gpio10);
++    object_class_property_set_description(object_class, "panel-gpio10-high",
++                                          "External GPIO10 panel strap: "
++                                          "high selects Full HD (default) "
++                                          "for the recovered MST12 platform");
++    object_class_property_add_bool(object_class, "micom-enabled",
++                                   mst_get_micom, mst_set_micom);
++    object_class_property_set_description(object_class, "micom-enabled",
++                                          "Enable verified MICOM UART1 "
++                                          "exchanges (default off); serial1 "
++                                          "becomes a TX observer");
++    object_class_property_add_bool(object_class, "native-scanout",
++                                   mst_get_native_scanout,
++                                   mst_set_native_scanout);
++    object_class_property_set_description(object_class, "native-scanout",
++                                          "Diagnostic view of the first "
++                                          "framebuffer instead of the "
++                                          "1920x1080 panel");
++    object_class_property_add_str(object_class, "secure-monitor",
++                                  mst_get_secure_monitor,
++                                  mst_set_secure_monitor);
++    object_class_property_set_description(object_class, "secure-monitor",
++                                          "Experimental SMC monitor: off "
++                                          "(default), zero (all r0=0), "
++                                          "or bootstrap (minimal WSM ABI)");
++}
++
++static const TypeInfo samsung_mstar_type = {
++    .name = TYPE_SAMSUNG_MSTAR_MACHINE,
++    .parent = TYPE_MACHINE,
++    .instance_size = sizeof(SamsungMStarState),
++    .instance_init = samsung_mstar_instance_init,
++    .class_init = samsung_mstar_class_init,
++};
++
++static void samsung_mstar_register_types(void)
++{
++    type_register_static(&samsung_mstar_type);
++}
++
++type_init(samsung_mstar_register_types)
